@@ -1,0 +1,486 @@
+/* Agent Genesis — Design System page styles.
+   Doc layout chrome only; component visuals all come from tokens.css. */
+
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: #fbfbfa;
+  color: #18181b;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.ds-shell {
+  display: grid;
+  grid-template-columns: 244px 1fr;
+  min-height: 100vh;
+}
+
+/* ─── Sidebar ─────────────────────────────────────────────── */
+.ds-nav {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border-right: 1px solid rgba(15,15,15,0.08);
+  background: #ffffff;
+  padding: 22px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ds-nav-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 6px 16px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(15,15,15,0.06);
+}
+.ds-nav-brand-mark {
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #5b53e8 0%, #8b5cf6 100%);
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; letter-spacing: -0.02em;
+  box-shadow: 0 1px 2px rgba(91, 83, 232, 0.3);
+}
+.ds-nav-brand-text {
+  display: flex; flex-direction: column;
+  line-height: 1.2;
+}
+.ds-nav-brand-text > b {
+  font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+}
+.ds-nav-brand-text > span {
+  font-size: 11px; color: #71717a;
+}
+.ds-nav-group {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #8a8a93;
+  padding: 14px 6px 4px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+}
+.ds-nav a {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  color: #52525b;
+  text-decoration: none;
+  transition: background 0.1s, color 0.1s;
+}
+.ds-nav a:hover { background: #f3f3f2; color: #18181b; }
+.ds-nav a.is-active { background: #eef0ff; color: #4940d3; font-weight: 500; }
+.ds-nav a > span:last-child {
+  margin-left: auto;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  color: #b4b4bb;
+}
+
+/* ─── Content ─────────────────────────────────────────────── */
+.ds-main { min-width: 0; }
+
+.ds-hero {
+  padding: 56px 56px 40px;
+  border-bottom: 1px solid rgba(15,15,15,0.06);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(124, 92, 255, 0.06), transparent 60%),
+    radial-gradient(circle at 0% 100%, rgba(91, 83, 232, 0.04), transparent 50%),
+    #ffffff;
+}
+.ds-eyebrow {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: #5b53e8;
+  font-family: 'Geist Mono', monospace;
+  display: flex; align-items: center; gap: 8px;
+}
+.ds-eyebrow::before {
+  content: ''; width: 16px; height: 1px; background: currentColor;
+}
+.ds-hero h1 {
+  margin: 14px 0 8px;
+  font-size: 36px; font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+.ds-hero p {
+  margin: 0; max-width: 620px;
+  font-size: 15px; color: #52525b;
+  text-wrap: pretty;
+}
+.ds-hero-meta {
+  margin-top: 28px;
+  display: flex; gap: 28px;
+}
+.ds-hero-meta > div {
+  display: flex; flex-direction: column;
+}
+.ds-hero-meta > div > span:first-child {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: #8a8a93;
+  font-family: 'Geist Mono', monospace;
+  margin-bottom: 4px;
+}
+.ds-hero-meta > div > span:last-child {
+  font-size: 14px; font-weight: 500;
+}
+
+.ds-section {
+  padding: 56px 56px 8px;
+  scroll-margin-top: 24px;
+}
+.ds-section + .ds-section {
+  border-top: 1px solid rgba(15,15,15,0.06);
+}
+.ds-section-head {
+  margin-bottom: 28px;
+  display: flex; align-items: flex-end; gap: 16px;
+}
+.ds-section-head h2 {
+  margin: 0;
+  font-size: 22px; font-weight: 600;
+  letter-spacing: -0.018em;
+}
+.ds-section-head .ds-anchor {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: #b4b4bb;
+}
+
+.ds-subsec {
+  margin-bottom: 40px;
+}
+.ds-subsec-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 14px;
+}
+.ds-subsec-head h3 {
+  margin: 0;
+  font-size: 15px; font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ds-subsec-head p {
+  margin: 0;
+  font-size: 12.5px; color: #71717a;
+  text-wrap: pretty;
+}
+.ds-subsec-head code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f3f3f2;
+  color: #4940d3;
+}
+
+/* ─── Demo frame ──────────────────────────────────────────── */
+.ds-demo {
+  border: 1px solid rgba(15,15,15,0.08);
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.ds-demo-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(15,15,15,0.06);
+  background: #fbfbfa;
+  font-size: 11.5px; color: #71717a;
+  font-family: 'Geist Mono', monospace;
+}
+.ds-demo-head .ds-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #d4d4d4;
+}
+.ds-demo-head .ds-dot.is-light { background: #fbbf24; }
+.ds-demo-head .ds-dot.is-dark { background: #5b53e8; }
+.ds-demo-head > span { margin-left: auto; }
+.ds-demo-body {
+  padding: 28px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.ds-demo-body.is-stack {
+  flex-direction: column; align-items: stretch;
+}
+.ds-demo-body.is-dark {
+  background: #0a0a0b;
+}
+.ds-demo-body.is-bare { padding: 0; display: block; }
+
+/* Side-by-side themed pair */
+.ds-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid rgba(15,15,15,0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ds-pair > div {
+  padding: 28px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  border-right: 1px solid rgba(15,15,15,0.06);
+}
+.ds-pair > div:last-child { border-right: 0; }
+.ds-pair-label {
+  position: absolute;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: rgba(15,15,15,0.06);
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ds-pair > div { position: relative; }
+
+/* ─── Color tokens ────────────────────────────────────────── */
+.ds-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+}
+.ds-swatch {
+  border: 1px solid rgba(15,15,15,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+.ds-swatch-color {
+  height: 72px;
+  display: flex; align-items: flex-end; padding: 8px 10px;
+  position: relative;
+}
+.ds-swatch-color::after {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: 7px 7px 0 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+  pointer-events: none;
+}
+.ds-swatch-info {
+  padding: 8px 10px;
+  border-top: 1px solid rgba(15,15,15,0.06);
+}
+.ds-swatch-name {
+  font-size: 12px; font-weight: 500;
+  margin-bottom: 2px;
+}
+.ds-swatch-token {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  color: #71717a;
+}
+.ds-swatch-hex {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  color: #8a8a93;
+  display: block;
+  margin-top: 1px;
+}
+
+/* ─── Type scale ──────────────────────────────────────────── */
+.ds-type {
+  display: grid;
+  grid-template-columns: 100px 100px 1fr;
+  align-items: baseline;
+  gap: 24px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(15,15,15,0.06);
+}
+.ds-type:last-child { border-bottom: 0; }
+.ds-type-name {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: #71717a;
+}
+.ds-type-meta {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: #b4b4bb;
+}
+
+/* ─── Spec list ───────────────────────────────────────────── */
+.ds-specs {
+  border: 1px solid rgba(15,15,15,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+.ds-specs > div {
+  display: grid;
+  grid-template-columns: 180px 1fr 80px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(15,15,15,0.05);
+}
+.ds-specs > div:last-child { border-bottom: 0; }
+.ds-specs > div > b {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: #4940d3;
+}
+.ds-specs > div > span {
+  font-size: 12.5px;
+  color: #52525b;
+}
+.ds-specs > div > em {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  font-style: normal;
+  color: #8a8a93;
+  text-align: right;
+}
+
+/* ─── Anatomy callouts ────────────────────────────────────── */
+.ds-anatomy {
+  position: relative;
+  padding: 40px 60px;
+  background: #fbfbfa;
+  border: 1px solid rgba(15,15,15,0.08);
+  border-radius: 10px;
+}
+.ds-anatomy-stage {
+  margin: 0 auto;
+  max-width: 540px;
+}
+/* Callout — `[badge text →]` or `[← badge text]`. Use ds-co for the layout,
+   ds-co-l (line ends on the right) or ds-co-r (line starts on the left)
+   for direction toward the card. */
+.ds-co {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: #4940d3;
+  white-space: nowrap;
+}
+.ds-co > b {
+  font-weight: 400;
+  background: rgba(91, 83, 232, 0.1);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.ds-co > i {
+  height: 1px;
+  width: 14px;
+  background: #4940d3;
+  display: inline-block;
+}
+
+/* ─── Tokens overview grid (foundations cards) ────────────── */
+.ds-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.ds-card {
+  border: 1px solid rgba(15,15,15,0.08);
+  border-radius: 10px;
+  padding: 16px;
+  background: #ffffff;
+}
+.ds-card-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8a8a93;
+  font-family: 'Geist Mono', monospace;
+  margin-bottom: 12px;
+}
+.ds-card-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.ds-card-row code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  color: #4940d3;
+  margin-left: auto;
+}
+
+/* radii preview */
+.ds-radii {
+  display: flex; gap: 16px; align-items: flex-end;
+}
+.ds-radii > div {
+  text-align: center;
+  font-family: 'Geist Mono', monospace; font-size: 10.5px;
+  color: #71717a;
+}
+.ds-radii > div > i {
+  display: block;
+  width: 56px; height: 40px;
+  background: #f3f3f2;
+  border: 1px solid rgba(15,15,15,0.08);
+  margin-bottom: 6px;
+}
+
+/* shadow preview */
+.ds-shadows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 18px;
+}
+.ds-shadows > div {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 22px 0 14px;
+  background: #fbfbfa;
+  border-radius: 10px;
+}
+.ds-shadows > div > i {
+  width: 64px; height: 64px;
+  background: #ffffff;
+  border-radius: 8px;
+}
+.ds-shadows > div > span {
+  font-family: 'Geist Mono', monospace; font-size: 10.5px;
+  color: #71717a;
+}
+
+/* small text helpers */
+.ds-mono {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11.5px;
+  color: #4940d3;
+  padding: 1px 5px;
+  background: #eef0ff;
+  border-radius: 3px;
+}
+
+/* footer */
+.ds-footer {
+  padding: 40px 56px;
+  border-top: 1px solid rgba(15,15,15,0.06);
+  color: #8a8a93;
+  font-size: 12px;
+  font-family: 'Geist Mono', monospace;
+  display: flex;
+  gap: 16px;
+}
+.ds-footer a { color: #4940d3; text-decoration: none; }
+.ds-footer a:hover { text-decoration: underline; }
+
+/* utility for inline demos that need a width-constrained app */
+.ds-app-frame {
+  border: 1px solid rgba(15,15,15,0.08);
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+  height: 100%;
+}
+.ds-app-frame.is-tall { height: 480px; }
+.ds-app-frame.is-mid { height: 320px; }
+.ds-app-frame.is-short { height: 220px; }

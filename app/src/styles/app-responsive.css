@@ -1,0 +1,31 @@
+/* Responsive breakpoints for the unified app.
+   Desktop is the default (≥769px). At ≤768px the AI column collapses,
+   a mobile tab bar appears, and the FAB shows on the Stories view. */
+
+.mobile-tab-bar { display: none; }
+.ag-mobile-fab  { display: none; }
+
+@media (max-width: 768px) {
+  /* Single-column on mobile — only one of stories or AI is visible at a time. */
+  .ag-main { display: block; }
+  .ag-stories-col { border-right: 0; width: 100%; }
+  .ag-ai-col      { width: 100%; }
+
+  /* data-mobile-tab on the .ag-main toggles which column shows. */
+  .ag-main[data-mobile-tab="stories"]   .ag-ai-col      { display: none; }
+  .ag-main[data-mobile-tab="assistant"] .ag-stories-col { display: none; }
+
+  /* Reveal mobile-only controls. */
+  .mobile-tab-bar { display: flex; }
+  .ag-mobile-fab  { display: flex; }
+
+  /* Hide the dev-only Tweaks panel; mobile viewport is too narrow for it. */
+  .tweaks-panel { display: none; }
+
+  /* Compact the desktop top bar a touch on small screens. */
+  .ag-topbar { padding: 0 10px; gap: 8px; }
+  .ag-topbar .ag-brand            { padding-right: 8px; margin-right: 0; }
+  .ag-topbar .ag-tabs             { display: none; }
+  .ag-topbar-right .ag-status-pill { display: none; }
+  .ag-topbar-right > button[title="Search"] { display: none; }
+}

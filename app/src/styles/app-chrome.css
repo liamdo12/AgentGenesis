@@ -1,0 +1,131 @@
+/* Agent Genesis app chrome — tweaks panel + mobile FAB.
+   Layout / topbar / surfaces all come from the shared design-system tokens.css. */
+
+html, body, #root { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: #fbfbfa;
+  color: #18181b;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Modal portal wrapper: a themed .ag-app sibling of the main app root,
+   so CSS variables (--ag-surface, --ag-border, …) resolve inside the
+   portaled modal. The wrapper itself should not establish layout — it just
+   carries the data-theme/data-density attributes. */
+.ag-modal-portal {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1000;
+}
+.ag-modal-portal > .ag-modal-backdrop { pointer-events: auto; }
+
+/* Tweaks panel — only rendered when ?tweaks=1. Floating top-right. */
+.tweaks-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 30;
+  width: 240px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(15, 15, 15, 0.08);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgba(15, 15, 15, 0.06),
+    0 12px 32px -8px rgba(15, 15, 15, 0.12);
+  padding: 10px;
+  font-size: 12px;
+  color: #18181b;
+}
+.ag-app[data-theme="dark"] .tweaks-panel {
+  background: rgba(18, 18, 20, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+.tweaks-panel-head {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #71717a;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid rgba(15, 15, 15, 0.06);
+  margin-bottom: 8px;
+}
+.ag-app[data-theme="dark"] .tweaks-panel-head { border-bottom-color: rgba(255, 255, 255, 0.06); }
+.tweaks-section {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a8a93;
+  padding: 8px 4px 4px;
+}
+.tweaks-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.tweaks-row > label {
+  flex: 1;
+  font-size: 12px;
+  color: inherit;
+}
+.tweaks-radio {
+  display: inline-flex;
+  background: rgba(15, 15, 15, 0.05);
+  padding: 2px;
+  border-radius: 6px;
+  gap: 2px;
+}
+.ag-app[data-theme="dark"] .tweaks-radio { background: rgba(255, 255, 255, 0.06); }
+.tweaks-radio button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  color: #71717a;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: capitalize;
+  transition: background 0.12s, color 0.12s;
+}
+.tweaks-radio button:hover { color: #18181b; }
+.ag-app[data-theme="dark"] .tweaks-radio button:hover { color: #f4f4f5; }
+.tweaks-radio button[data-active] {
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.ag-app[data-theme="dark"] .tweaks-radio button[data-active] {
+  background: #2a2a30;
+  color: #f4f4f5;
+}
+
+/* Mobile FAB — visibility controlled by app-responsive.css. */
+.ag-mobile-fab {
+  position: absolute;
+  bottom: 24px;
+  right: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--ag-accent);
+  color: white;
+  border: 0;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow:
+    0 4px 16px rgba(91, 83, 232, 0.4),
+    0 1px 2px rgba(91, 83, 232, 0.3);
+}
