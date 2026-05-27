@@ -1,12 +1,21 @@
 import { Icon } from '@ds/lib/icons';
+import { MeetingDropdown } from '../components/meeting-dropdown';
+import { useAppDispatch, useAppState } from '../state/app-state-context';
 
-const RECENT_MEETINGS = [
-  { title: 'Sprint Planning',            detail: 'Aug 22 · 42 min', candidates: 3 },
-  { title: 'Customer Discovery — Acme',  detail: 'Aug 21 · 28 min', candidates: 5 },
-  { title: 'Retro · Sprint 14',          detail: 'Aug 20 · 35 min', candidates: 2 },
-];
+const EXTRACTION_SIMULATION_MS = 1400;
 
 export function MeetingsEmpty() {
+  const { meetings, selectedMeetingId } = useAppState();
+  const dispatch = useAppDispatch();
+
+  // Picking a meeting both records the selection and kicks off extraction.
+  // Matches the meetings-list "Re-extract" simulation timing.
+  const pickAndExtract = (id: string) => {
+    dispatch({ type: 'SET_SELECTED_MEETING', payload: id });
+    dispatch({ type: 'START_EXTRACTION' });
+    setTimeout(() => dispatch({ type: 'FINISH_EXTRACTION' }), EXTRACTION_SIMULATION_MS);
+  };
+
   return (
     <div className="ag-stories-col">
       <div className="ag-subhead">
@@ -32,57 +41,17 @@ export function MeetingsEmpty() {
           Connect a meeting recording, paste a transcript, or invite Genesis Bot to your next call.
           Stories will appear here.
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="ag-btn" data-variant="primary" data-size="lg">
-            <Icon.Calendar width={13} height={13} /> Select a meeting
-          </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <MeetingDropdown
+            meetings={meetings}
+            selectedId={selectedMeetingId}
+            onSelect={pickAndExtract}
+            placeholder="Select a meeting"
+            size="lg"
+          />
           <button type="button" className="ag-btn" data-size="lg">
             <Icon.Plus width={13} height={13} /> Paste transcript
           </button>
-        </div>
-
-        <div style={{ marginTop: 32, width: '100%', maxWidth: 480 }}>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: 'var(--ag-text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              fontFamily: 'var(--ag-mono)',
-              marginBottom: 10,
-              textAlign: 'left',
-            }}
-          >
-            Recent meetings
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {RECENT_MEETINGS.map((m) => (
-              <button
-                key={m.title}
-                type="button"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  background: 'var(--ag-surface)',
-                  border: '1px solid var(--ag-border)',
-                  borderRadius: 8,
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                }}
-              >
-                <Icon.Calendar width={14} height={14} style={{ color: 'var(--ag-text-muted)' }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{m.title}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ag-text-muted)' }}>{m.detail}</div>
-                </div>
-                <span className="ag-tag">{m.candidates} candidates</span>
-                <Icon.ChevronRight width={12} height={12} style={{ color: 'var(--ag-text-muted)' }} />
-              </button>
-            ))}
-          </div>
         </div>
       </div>
     </div>

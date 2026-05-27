@@ -4,6 +4,25 @@ import { Icon, type IconName } from './icons';
 export type Priority = 'high' | 'med' | 'low';
 export type Status = 'approved' | 'pending';
 
+export type Meeting = {
+  id: string;
+  title: string;
+  // Human-readable date + duration, e.g. "Aug 22 · 42 min". Pre-formatted to
+  // avoid a runtime date library purely for cosmetic copy.
+  detail: string;
+  candidates: number;
+};
+
+// Source of truth for the meeting picker. The first entry is the default
+// selection on first load; story seed data currently quotes its label.
+export const AG_MEETINGS: Meeting[] = [
+  { id: 'm-sprint-22',    title: 'Sprint Planning',            detail: 'Aug 22 · 42 min', candidates: 5 },
+  { id: 'm-discovery-21', title: 'Customer Discovery — Acme',  detail: 'Aug 21 · 28 min', candidates: 5 },
+  { id: 'm-retro-20',     title: 'Retro · Sprint 14',          detail: 'Aug 20 · 35 min', candidates: 2 },
+  { id: 'm-design-19',    title: 'Design Review · Onboarding', detail: 'Aug 19 · 51 min', candidates: 4 },
+  { id: 'm-standup-18',   title: 'Engineering Sync',           detail: 'Aug 18 · 22 min', candidates: 1 },
+];
+
 export type Story = {
   id: string;
   title: string;

@@ -1,4 +1,4 @@
-import { AG_MESSAGES, AG_STORIES } from '@ds/lib/seed-data';
+import { AG_MEETINGS, AG_MESSAGES, AG_STORIES } from '@ds/lib/seed-data';
 import { DEFAULT_TWEAKS } from '../lib/use-tweaks';
 import type { Action, AppState } from './app-state-types';
 
@@ -17,6 +17,10 @@ export function initialState(): AppState {
     composer: '',
     aiThinking: false,
     tweaks: DEFAULT_TWEAKS,
+    meetings: AG_MEETINGS,
+    // Seeded to the first meeting so the list view's "From <meeting>" subhead
+    // has a value to display without the user picking one first.
+    selectedMeetingId: AG_MEETINGS[0]?.id ?? null,
   };
 }
 
@@ -75,6 +79,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'CLOSE_MODAL':
       return { ...state, modal: null };
+
+    case 'SET_SELECTED_MEETING':
+      return { ...state, selectedMeetingId: action.payload };
 
     case 'START_EXTRACTION':
       return { ...state, phase: 'extracting' };

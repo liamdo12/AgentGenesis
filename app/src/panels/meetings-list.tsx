@@ -1,6 +1,7 @@
 import { AgStoryCard } from '@ds/components/ag-story-card';
 import { AgBulkBar } from '@ds/components/ag-bulk-bar';
 import { Icon } from '@ds/lib/icons';
+import { MeetingDropdown } from '../components/meeting-dropdown';
 import { useAppDispatch, useAppState } from '../state/app-state-context';
 import type { StoryFilter } from '../state/app-state-types';
 
@@ -14,7 +15,7 @@ const FILTERS: { id: StoryFilter; label: string }[] = [
 ];
 
 export function MeetingsList() {
-  const { stories, filter, search, selected, approved } = useAppState();
+  const { stories, filter, search, selected, approved, meetings, selectedMeetingId } = useAppState();
   const dispatch = useAppDispatch();
 
   const filtered = stories.filter((s) => {
@@ -40,6 +41,14 @@ export function MeetingsList() {
     setTimeout(() => dispatch({ type: 'FINISH_EXTRACTION' }), EXTRACTION_SIMULATION_MS);
   };
 
+  // Switching the selected meeting via the dropdown implicitly re-extracts;
+  // the user's intent is "pick a meeting and pull its stories".
+  const handlePickMeeting = (id: string) => {
+    if (id === selectedMeetingId) return;
+    dispatch({ type: 'SET_SELECTED_MEETING', payload: id });
+    startExtraction();
+  };
+
   return (
     <div className="ag-stories-col">
       <div className="ag-subhead">
@@ -47,12 +56,15 @@ export function MeetingsList() {
           <div className="ag-subhead-title">
             Stories <span className="ag-subhead-count">{filtered.length}</span>
           </div>
-          <div className="ag-subhead-meta">
-            <Icon.Calendar width={11} height={11} /> From{' '}
-            <strong style={{ color: 'var(--ag-text-secondary)', fontWeight: 500 }}>
-              Sprint Planning · Aug 22
-            </strong>{' '}
-            · last extracted 8 min ago
+          <div className="ag-subhead-meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>From</span>
+            <MeetingDropdown
+              meetings={meetings}
+              selectedId={selectedMeetingId}
+              onSelect={handlePickMeeting}
+              size="sm"
+            />
+            <span>· last extracted 8 min ago</span>
           </div>
         </div>
         <div className="ag-subhead-actions">

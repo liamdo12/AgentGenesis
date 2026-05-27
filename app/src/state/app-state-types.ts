@@ -1,4 +1,4 @@
-import type { Message, Story } from '@ds/lib/seed-data';
+import type { Meeting, Message, Story } from '@ds/lib/seed-data';
 import type { Tweaks } from '../lib/use-tweaks';
 
 export type TopTab = 'Meetings' | 'Stories' | 'Dashboard';
@@ -24,6 +24,10 @@ export type AppState = {
   composer: string;
   aiThinking: boolean;
   tweaks: Tweaks;
+  meetings: Meeting[];
+  // `null` only briefly on cold start before the dropdown defaults to the
+  // first meeting; UI treats null as "no meeting selected" (empty state).
+  selectedMeetingId: string | null;
 };
 
 export type Action =
@@ -38,6 +42,7 @@ export type Action =
   | { type: 'SET_FOCUSED'; payload: string | null }
   | { type: 'OPEN_MODAL'; payload: NonNullable<ModalState> }
   | { type: 'CLOSE_MODAL' }
+  | { type: 'SET_SELECTED_MEETING'; payload: string }
   | { type: 'START_EXTRACTION' }
   | { type: 'FINISH_EXTRACTION' }
   | { type: 'SEND_USER_MESSAGE'; payload: Message }
