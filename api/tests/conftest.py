@@ -6,6 +6,13 @@ from pathlib import Path
 
 import pytest
 
+# Set stub-auth defaults BEFORE any test imports `agentgenesis_api.config`.
+# Without this, tests that construct `Settings(...)` directly (e.g.
+# test_phase4_nodes) trip the new "Entra config required" validator added in
+# Phase 1 of the SSO plan.
+os.environ.setdefault("AG_USE_STUB_NODES", "1")
+os.environ.setdefault("AG_ENVIRONMENT", "test")
+
 
 @pytest.fixture
 def env_setup(tmp_path: Path) -> Iterator[None]:

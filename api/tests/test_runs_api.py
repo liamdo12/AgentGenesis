@@ -65,6 +65,7 @@ def test_path_traversal_blocked(env_setup) -> None:
     runner._runs["test-run"] = Run(
         id="test-run",
         meeting_id="m1",
+        user_oid="stub-user",  # matches STUB_USER.oid so the existing test path keeps working
         status=RunStatus.DONE,
         progress=1.0,
         error=None,
@@ -72,13 +73,15 @@ def test_path_traversal_blocked(env_setup) -> None:
         finished_at=None,
         output_dir=str(output_dir),
     )
-    # Inside output_dir → ok.
-    assert runner.safe_resolve("test-run", "transcript.json") is not None
-    # Escape attempt → blocked.
-    assert runner.safe_resolve("test-run", "../../../etc/passwd") is None
-    assert runner.safe_resolve("test-run", "/etc/passwd") is None
+    # Inside output_dir → ok for owner.
+    assert runner.safe_resolve("test-run", "transcript.json", "stub-user") is not None
+    # Escape attempt → blocked even for owner.
+    assert runner.safe_resolve("test-run", "../../../etc/passwd", "stub-user") is None
+    assert runner.safe_resolve("test-run", "/etc/passwd", "stub-user") is None
     # Unknown run → blocked.
-    assert runner.safe_resolve("does-not-exist", "any.json") is None
+    assert runner.safe_resolve("does-not-exist", "any.json", "stub-user") is None
+    # Cross-user → blocked (404 in the router).
+    assert runner.safe_resolve("test-run", "transcript.json", "different-user") is None
 
 
 def test_resume_unknown_run(env_setup) -> None:

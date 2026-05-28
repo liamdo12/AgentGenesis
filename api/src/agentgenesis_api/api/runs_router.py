@@ -1,9 +1,15 @@
-"""/runs HTTP endpoints — start, poll, list, resume, and file-serve outputs."""
+"""/runs HTTP endpoints — start, poll, list, resume, file-serve.
 
-from fastapi import APIRouter, HTTPException, Request, status
+All endpoints require an authenticated user (`Depends(require_user)`).
+Cross-user reads return 404, never 403, to avoid run-id existence disclosure
+(per red-team Finding 9).
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from agentgenesis_api.auth import User, require_user
 from agentgenesis_api.graph.runner import RunStoreFull
 from agentgenesis_api.schemas import Run
 
@@ -15,47 +21,67 @@ class StartRunBody(BaseModel):
 
 
 @router.post("/runs", status_code=status.HTTP_202_ACCEPTED)
-async def start_run(body: StartRunBody, request: Request) -> dict[str, str]:
+async def start_run(
+    body: StartRunBody,
+    request: Request,
+    user: User = Depends(require_user),  # noqa: B008 — FastAPI canonical
+) -> dict[str, str]:
     runner = request.app.state.runner
     try:
-        run = await runner.submit(body.meeting_id)
+        run = await runner.submit(body.meeting_id, user)
     except RunStoreFull as e:
         raise HTTPException(status_code=429, detail=str(e)) from e
     return {"run_id": run.id}
 
 
 @router.get("/runs/{run_id}", response_model=Run)
-async def get_run(run_id: str, request: Request) -> Run:
+async def get_run(
+    run_id: str,
+    request: Request,
+    user: User = Depends(require_user),  # noqa: B008
+) -> Run:
     runner = request.app.state.runner
-    run = await runner.get(run_id)
+    run = await runner.get(run_id, user.oid)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
     return run
 
 
 @router.get("/runs", response_model=list[Run])
-async def list_runs(request: Request, limit: int = 100) -> list[Run]:
+async def list_runs(
+    request: Request,
+    user: User = Depends(require_user),  # noqa: B008
+    limit: int = 100,
+) -> list[Run]:
     runner = request.app.state.runner
-    return await runner.list(limit=limit)
+    return await runner.list(user.oid, limit=limit)
 
 
 @router.post("/runs/{run_id}/resume", response_model=Run)
-async def resume_run(run_id: str, request: Request) -> Run:
+async def resume_run(
+    run_id: str,
+    request: Request,
+    user: User = Depends(require_user),  # noqa: B008
+) -> Run:
     runner = request.app.state.runner
     try:
-        return await runner.resume(run_id)
+        return await runner.resume(run_id, user)
     except KeyError as e:
         raise HTTPException(status_code=404, detail="run not found") from e
 
 
 @router.get("/runs/{run_id}/files/{rel_path:path}")
-async def get_run_file(run_id: str, rel_path: str, request: Request):
+async def get_run_file(
+    run_id: str,
+    rel_path: str,
+    request: Request,
+    user: User = Depends(require_user),  # noqa: B008
+):
     runner = request.app.state.runner
-    resolved = runner.safe_resolve(run_id, rel_path)
+    resolved = runner.safe_resolve(run_id, rel_path, user.oid)
     if resolved is None:
-        # 403 covers both "not under output_dir" and "run not found" — don't
-        # leak whether a given run exists.
-        raise HTTPException(status_code=403, detail="forbidden")
+        # 404 (not 403) — never disclose whether a run id exists for another user.
+        raise HTTPException(status_code=404, detail="not found")
     if not resolved.is_file():
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(resolved)

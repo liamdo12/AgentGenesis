@@ -1,20 +1,34 @@
 """Application settings loaded from environment / .env file."""
 
 from pathlib import Path
+from typing import Literal
 
-from pydantic import HttpUrl, SecretStr
+from pydantic import HttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # Core
     data_dir: Path = Path("./data")
+    environment: Literal["dev", "test", "prod"] = "dev"
 
-    # Microsoft Teams MCP
-    teams_mcp_url: HttpUrl
+    # Microsoft Entra ID (Phase 1)
+    # Required in non-stub mode. The validator below tolerates blanks when
+    # use_stub_nodes is true (CI / design QA).
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""                              # GUID; v2 token audience
+    entra_client_secret: SecretStr = SecretStr("")         # for OBO exchange
+    graph_delegated_scopes: tuple[str, ...] = (
+        "https://graph.microsoft.com/User.Read",
+        "https://graph.microsoft.com/OnlineMeetingRecording.Read.All",
+        "https://graph.microsoft.com/OnlineMeetingTranscript.Read.All",
+    )
+
+    # Microsoft Teams MCP (DEPRECATED — deleted in Phase 4 of the SSO plan).
+    # Kept here so existing TeamsMCPClient + tests keep compiling during the
+    # phased rollout. Once Phase 4 ships, this block goes away.
+    teams_mcp_url: HttpUrl = HttpUrl("http://localhost:3000/mcp")
     teams_mcp_auth_token: SecretStr | None = None
-    # Tool names are server-specific. Overridable so we can swap MCP servers
-    # without touching code.
     mcp_tool_list_recordings: str = "list_meeting_recordings"
     mcp_tool_get_transcript: str = "get_meeting_transcript"
     mcp_tool_get_recording: str = "get_meeting_recording"
@@ -59,3 +73,28 @@ class Settings(BaseSettings):
         env_prefix="AG_",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _validate_auth_mode(self) -> "Settings":
+        # Hard guardrail per red-team Finding 6: stub auth must not be enabled
+        # in production, even if the env var is accidentally set.
+        if self.use_stub_nodes and self.environment == "prod":
+            raise ValueError(
+                "use_stub_nodes=True is refused when environment='prod'. "
+                "Stub auth bypasses Entra ID validation and must never run in production."
+            )
+        # When not in stub mode, real Entra creds are required.
+        if not self.use_stub_nodes:
+            missing = [
+                name for name, val in (
+                    ("AG_ENTRA_TENANT_ID", self.entra_tenant_id),
+                    ("AG_ENTRA_CLIENT_ID", self.entra_client_id),
+                    ("AG_ENTRA_CLIENT_SECRET", self.entra_client_secret.get_secret_value()),
+                )
+                if not val
+            ]
+            if missing:
+                raise ValueError(
+                    f"Entra ID config required when use_stub_nodes is false. Missing: {missing}"
+                )
+        return self

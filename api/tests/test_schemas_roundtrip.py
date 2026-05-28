@@ -78,6 +78,7 @@ def test_run_round_trip() -> None:
     r = Run(
         id="abc123",
         meeting_id="m-1",
+        user_oid="alice",
         status=RunStatus.PENDING,
         progress=0.0,
         error=None,

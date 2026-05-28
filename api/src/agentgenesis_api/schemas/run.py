@@ -22,6 +22,7 @@ class RunStatus(StrEnum):
 class Run(BaseModel):
     id: str
     meeting_id: str
+    user_oid: str                                # who submitted; IDOR scoping key
     status: RunStatus
     progress: float = 0.0
     error: str | None = None

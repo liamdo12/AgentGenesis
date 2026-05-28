@@ -53,7 +53,7 @@ def _settings(tmp_path: Path) -> Settings:
 
 def _deps(tmp_path: Path) -> tuple[NodeDeps, _FakeClaude]:
     fake = _FakeClaude()
-    return NodeDeps(settings=_settings(tmp_path), mcp=None, claude=fake), fake  # type: ignore[arg-type]
+    return NodeDeps(settings=_settings(tmp_path), graph=None, claude=fake), fake  # type: ignore[arg-type]
 
 
 # ──────────────── frame selection ────────────────
@@ -211,7 +211,7 @@ async def test_claude_draft_stories_assigns_ids_and_writes(tmp_path: Path) -> No
 
 
 async def test_claude_summary_raises_without_client(tmp_path: Path) -> None:
-    deps = NodeDeps(settings=_settings(tmp_path), mcp=None, claude=None)  # type: ignore[arg-type]
+    deps = NodeDeps(settings=_settings(tmp_path), graph=None, claude=None)  # type: ignore[arg-type]
     node = claude_summary.build(deps)
     with pytest.raises(Exception, match="not configured"):
         await node({"run_id": "r", "multimodal_context": {

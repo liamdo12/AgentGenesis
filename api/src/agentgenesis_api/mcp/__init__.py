@@ -1,8 +1,8 @@
-"""Microsoft Teams MCP client wrapper.
+"""Microsoft Graph client + shared exceptions for the meetings source.
 
-Talks to a community Teams MCP server (see docs/teams-mcp-setup.md for which
-server and how to set it up). Downstream graph nodes consume the typed client
-methods here and never touch raw MCP transport.
+The package name is `mcp` for legacy reasons — the original Teams MCP client
+was deleted in Phase 4 of the SSO plan; `GraphClient` replaced it. Downstream
+import sites keep using `from agentgenesis_api.mcp import GraphClient`.
 """
 
 from agentgenesis_api.mcp.exceptions import (
@@ -10,19 +10,19 @@ from agentgenesis_api.mcp.exceptions import (
     MCPTransportError,
     TranscriptNotReady,
 )
+from agentgenesis_api.mcp.graph_client import GraphClient
 from agentgenesis_api.mcp.models import (
     MeetingRef,
     RecordingArtifact,
     TranscriptArtifact,
 )
-from agentgenesis_api.mcp.teams_client import TeamsMCPClient
 
 __all__ = [
+    "GraphClient",
     "MCPToolError",
     "MCPTransportError",
     "MeetingRef",
     "RecordingArtifact",
-    "TeamsMCPClient",
     "TranscriptArtifact",
     "TranscriptNotReady",
 ]

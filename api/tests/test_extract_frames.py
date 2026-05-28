@@ -26,7 +26,7 @@ def _deps(tmp_path: Path, *, interval: int = 1, window: int = 2) -> NodeDeps:
         min_useful_frames=1,
         max_parallel_ffmpeg=2,
     )
-    return NodeDeps(settings=settings, mcp=None)  # type: ignore[arg-type]
+    return NodeDeps(settings=settings, graph=None)  # type: ignore[arg-type]
 
 
 async def test_extract_chunk_produces_frames(tmp_path: Path) -> None:

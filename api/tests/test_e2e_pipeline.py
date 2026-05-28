@@ -33,10 +33,12 @@ FIXTURE_VTT = (Path(__file__).parent / "fixtures" / "sample.vtt").read_text()
 
 
 class _FakeMCP:
+    """Stand-in for GraphClient with the same surface (per-method user arg)."""
+
     def __init__(self, recording_bytes: bytes) -> None:
         self._recording = recording_bytes
 
-    async def list_meeting_recordings(self, limit: int = 50) -> list[MeetingRef]:
+    async def list_meeting_recordings(self, user, limit: int = 50) -> list[MeetingRef]:
         return [
             MeetingRef(
                 id="m-e2e",
@@ -47,17 +49,24 @@ class _FakeMCP:
             )
         ]
 
-    async def get_transcript(self, meeting_id: str) -> TranscriptArtifact:
+    async def get_transcript(self, user, meeting_id: str) -> TranscriptArtifact:
         return TranscriptArtifact(meeting_id=meeting_id, vtt_text=FIXTURE_VTT)
 
-    async def get_recording(self, meeting_id: str) -> RecordingArtifact:
-        # E2E uses a local "data URL"-ish trick: the fetch_recording node will
-        # try to httpx.GET the URL. We patch httpx in this test via a fixture.
+    async def get_recording(self, user, meeting_id: str) -> RecordingArtifact:
         return RecordingArtifact(
             meeting_id=meeting_id,
             download_url=HttpUrl("https://example.invalid/rec.mp4"),
             content_type="video/mp4",
         )
+
+    async def aclose(self) -> None: ...
+
+
+class _FakeBroker:
+    """Stand-in for TokenBroker; fetch_recording reads bearer here."""
+
+    async def acquire_graph_token(self, user, scopes) -> str:
+        return "e2e-graph-token"
 
     async def aclose(self) -> None: ...
 
@@ -149,7 +158,7 @@ def fake_httpx(monkeypatch):
 
         async def __aexit__(self, *a): ...
 
-        def stream(self, method: str, url: str) -> _Stream:
+        def stream(self, method: str, url: str, headers: dict | None = None) -> _Stream:
             return _Stream()
 
     monkeypatch.setattr(fr_mod.httpx, "AsyncClient", _Client)
@@ -169,14 +178,20 @@ async def test_extraction_pipeline_end_to_end(tmp_path: Path, fake_httpx) -> Non
     fake_mcp = _FakeMCP(FIXTURE_MP4.read_bytes())
     fake_claude = _FakeClaude()
 
-    runner = GraphRunner(settings, mcp=fake_mcp, claude=fake_claude)  # type: ignore[arg-type]
+    # Phase 4 renamed `mcp` → `graph`; the fake's interface matches GraphClient
+    # (list_meeting_recordings, get_transcript, get_recording — now taking a `user`).
+    runner = GraphRunner(
+        settings, graph=fake_mcp, broker=_FakeBroker(), claude=fake_claude
+    )  # type: ignore[arg-type]
     await runner.startup()
     try:
-        run = await runner.submit("m-e2e")
+        from agentgenesis_api.auth.models import STUB_USER
+
+        run = await runner.submit("m-e2e", STUB_USER)
         # Poll until done or timeout.
         deadline = asyncio.get_event_loop().time() + 30.0
         while True:
-            current = await runner.get(run.id)
+            current = await runner.get(run.id, STUB_USER.oid)
             assert current is not None
             if current.status in (RunStatus.DONE, RunStatus.FAILED):
                 break

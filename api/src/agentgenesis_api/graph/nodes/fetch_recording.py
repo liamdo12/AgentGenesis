@@ -1,8 +1,8 @@
-"""Graph node: stream the recording MP4 from MCP to local disk.
+"""Graph node: stream the recording MP4 from Graph to local disk.
 
-Supports both server response shapes:
-- Signed `download_url` → stream via httpx.
-- (Future) inline-bytes follow-up tool call — not exercised by current servers.
+Critical per red-team Finding 4: Graph's `recordingContentUrl` is an
+endpoint URL (NOT a signed URL). Every recording download MUST attach
+`Authorization: Bearer {graph-token}`. The TokenBroker provides the bearer.
 
 Writes to `source/recording.mp4.part` then atomic-renames on success so a
 killed download never leaves a partial-looking file at the final path.
@@ -16,6 +16,8 @@ from typing import Any
 
 import httpx
 
+from agentgenesis_api.auth.models import STUB_USER
+from agentgenesis_api.graph.auth_context import current_user
 from agentgenesis_api.graph.deps import NodeDeps
 
 
@@ -27,12 +29,19 @@ def build(deps: NodeDeps):
             return {"phase_label": "Downloading recording…", "progress": 0.35}
 
         meeting_id = state["meeting_id"]
-        artifact = await deps.mcp.get_recording(meeting_id)
+        user = current_user.get() or STUB_USER
+        if deps.graph is None:
+            raise RuntimeError("graph client not configured")
+
+        artifact = await deps.graph.get_recording(user, meeting_id)
         if artifact.download_url is None:
-            raise RuntimeError(
-                "MCP did not return a download_url. "
-                "Inline-bytes follow-up calls aren't supported yet."
-            )
+            raise RuntimeError("Graph returned no recordingContentUrl")
+
+        # Bearer header for the content download — Graph's recordingContentUrl
+        # is NOT a signed URL. Per red-team Finding 4.
+        if deps.broker is None:
+            raise RuntimeError("TokenBroker required to download recording content")
+        bearer = await deps.broker.acquire_graph_token(user, deps.settings.graph_delegated_scopes)
 
         run_id = state["run_id"]
         source_dir = deps.settings.data_dir / "runs" / run_id / "source"
@@ -41,8 +50,9 @@ def build(deps: NodeDeps):
         tmp = source_dir / "recording.mp4.part"
 
         timeout = httpx.Timeout(deps.settings.recording_download_timeout_sec)
+        headers = {"Authorization": f"Bearer {bearer}"}
         async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("GET", str(artifact.download_url)) as r:
+            async with client.stream("GET", str(artifact.download_url), headers=headers) as r:
                 r.raise_for_status()
                 total = int(r.headers.get("Content-Length", "0"))
                 _ensure_free_space(source_dir, total)

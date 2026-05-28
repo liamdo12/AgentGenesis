@@ -13,11 +13,11 @@ dependencies = [
     "structlog>=24.4",
     "aiofiles>=24.1",
     "python-magic>=0.4.27",
-    "mcp>=1.27.1",
     "langgraph>=1.2.2",
     "langgraph-checkpoint-sqlite>=3.1.0",
     "langdetect>=1.0.9",
     "anthropic>=0.104.1",
+    "pyjwt[crypto]>=2.9",
 ]
 
 [dependency-groups]

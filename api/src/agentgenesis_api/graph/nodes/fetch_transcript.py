@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentgenesis_api.auth.models import STUB_USER
+from agentgenesis_api.graph.auth_context import current_user
 from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.graph.nodes._shared import lang_detect, vtt_parser
 from agentgenesis_api.mcp import TranscriptNotReady
@@ -22,8 +24,11 @@ def build(deps: NodeDeps):
             return {"phase_label": "Fetching transcript…", "progress": 0.20}
 
         meeting_id = state["meeting_id"]
+        user = current_user.get() or STUB_USER
+        if deps.graph is None:
+            raise RuntimeError("graph client not configured")
         try:
-            artifact = await deps.mcp.get_transcript(meeting_id)
+            artifact = await deps.graph.get_transcript(user, meeting_id)
         except TranscriptNotReady:
             return {
                 "phase_label": "Transcript not ready",
