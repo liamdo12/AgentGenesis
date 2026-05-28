@@ -2,6 +2,7 @@ import { AgStoryCard } from '@ds/components/ag-story-card';
 import { AgBulkBar } from '@ds/components/ag-bulk-bar';
 import { Icon } from '@ds/lib/icons';
 import { MeetingDropdown } from '../components/meeting-dropdown';
+import { useMeetings } from '../hooks/use-meetings';
 import { useAppDispatch, useAppState } from '../state/app-state-context';
 import type { StoryFilter } from '../state/app-state-types';
 
@@ -15,7 +16,10 @@ const FILTERS: { id: StoryFilter; label: string }[] = [
 ];
 
 export function MeetingsList() {
-  const { stories, filter, search, selected, approved, meetings, selectedMeetingId } = useAppState();
+  const { stories, filter, search, selected, approved, selectedMeetingId } = useAppState();
+  // Real meetings from /meetings — overrides any seed data in app state.
+  // Per red-team Finding 12.
+  const { meetings } = useMeetings();
   const dispatch = useAppDispatch();
 
   const filtered = stories.filter((s) => {

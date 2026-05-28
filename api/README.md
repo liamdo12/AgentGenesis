@@ -1,16 +1,20 @@
 # Agent Genesis API
 
-Extraction-stage backend: takes a Microsoft Teams meeting ID, pulls the transcript and recording via MCP, samples representative frames with ffmpeg, then calls Claude (multimodal) to produce a meeting summary and draft user stories.
+Extraction-stage backend: takes a Microsoft Teams meeting, pulls the transcript and recording via Microsoft Graph, samples representative frames with ffmpeg, then calls Claude (multimodal) to produce a meeting summary and draft user stories.
 
-Implements phases 1–6 of [`plans/260528-0833-extraction-feature-langgraph-claude-teams-mcp/`](../plans/260528-0833-extraction-feature-langgraph-claude-teams-mcp/). HITL review, Epic/Feature/Task hierarchy, and Azure DevOps writes are out of scope here.
+Implements:
+- [`260528-0833-extraction-feature-langgraph-claude-teams-mcp`](../plans/260528-0833-extraction-feature-langgraph-claude-teams-mcp/) — phases 1–7 (the LangGraph pipeline).
+- [`260528-1050-graph-fallback-and-entra-id-sso`](../plans/260528-1050-graph-fallback-and-entra-id-sso/) — Entra ID SSO + OBO + direct Graph client + IDOR scoping.
+
+HITL review, Epic/Feature/Task hierarchy, and Azure DevOps writes are still out of scope here.
 
 ## Prerequisites
 
 - Python **3.13** (`brew install python@3.13` on macOS).
 - [`uv`](https://docs.astral.sh/uv/) (`brew install uv`).
 - `ffmpeg` ≥ 6 on PATH (`brew install ffmpeg`).
-- A running **Teams MCP server**. See [`docs/teams-mcp-setup.md`](../docs/teams-mcp-setup.md).
-- An Anthropic API key.
+- An **Anthropic API key** for Claude.
+- A **Microsoft Entra ID app registration** — see [`docs/entra-id-setup.md`](../docs/entra-id-setup.md). 15-minute walkthrough.
 
 ## Setup
 
@@ -18,7 +22,7 @@ Implements phases 1–6 of [`plans/260528-0833-extraction-feature-langgraph-clau
 cd api
 uv sync
 cp .env.example .env
-# Fill in AG_TEAMS_MCP_URL and AG_ANTHROPIC_API_KEY in .env.
+# Fill in AG_ENTRA_*, AG_ANTHROPIC_API_KEY (see docs/entra-id-setup.md).
 ```
 
 ## Run
@@ -29,18 +33,28 @@ uv run uvicorn agentgenesis_api.main:create_app --factory --port 8000 --reload
 
 `--factory` is mandatory — the app instance is constructed by `create_app()` so Settings validation runs at app-startup time, not at module-import time.
 
+## Authentication
+
+Every endpoint except `/healthz` requires a **Bearer JWT** from Microsoft Entra ID (v2 access token, `aud` = client_id GUID, scope `api://agentgenesis-api/access_as_user`). The backend then mints a per-user Graph token via the **On-Behalf-Of (OBO)** flow for every Graph call. Run authorship is tracked via `Run.user_oid`; cross-user reads return 404 (never 403, to avoid run-id disclosure).
+
+For local dev without a real tenant, set `AG_USE_STUB_NODES=1` (refused in `AG_ENVIRONMENT=prod`). The frontend pairs this with `?fakeAuth=1` which sends `Authorization: Bearer stub-token`.
+
+```bash
+# Sample request with a real token from MSAL.js
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/meetings
+```
+
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/healthz` | Liveness check. |
-| `GET` | `/mcp/healthz` | Smoke-test MCP connectivity; returns the live tool list. |
-| `GET` | `/meetings?limit=N` | List Teams meeting recordings (cached 60s). |
+| `GET` | `/healthz` | Liveness check (no auth). |
+| `GET` | `/meetings?limit=N` | List the caller's Teams meeting recordings (cached 60s per `(oid, limit)`). |
 | `POST` | `/runs` | Body `{ "meeting_id": "..." }` → `202 { "run_id": "..." }`. |
-| `GET` | `/runs/{id}` | Poll status, progress, error, output paths. |
-| `GET` | `/runs?limit=N` | List recent runs. |
-| `POST` | `/runs/{id}/resume` | Resume a run paused at `pending_transcript`. |
-| `GET` | `/runs/{id}/files/{path}` | Serve a file from the run's output dir (path-traversal blocked). |
+| `GET` | `/runs/{id}` | Poll caller's run; cross-user → 404. |
+| `GET` | `/runs?limit=N` | List caller's recent runs only. |
+| `POST` | `/runs/{id}/resume` | Resume a paused run (caller must own it). |
+| `GET` | `/runs/{id}/files/{path}` | Serve a file from the run's output dir (path-traversal blocked, user-scoped). |
 
 ## Outputs
 
@@ -54,8 +68,6 @@ manifest.json            # frame index with timestamps
 summary.json             # MeetingSummary
 stories.json             # StoriesOutput — IDs AG-1001+
 ```
-
-`stories.json` is the artifact the future HITL review plan will consume.
 
 ## Status flow
 
@@ -73,10 +85,14 @@ pending → fetching_transcript → fetching_recording
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Boot raises `ffmpeg not found on PATH` | ffmpeg missing | `brew install ffmpeg` (or set `AG_USE_STUB_NODES=1` for stub-only dev). |
-| `/mcp/healthz` → 503 | MCP server unreachable | Check `AG_TEAMS_MCP_URL`; verify the MCP server is running. |
+| Boot raises `Entra ID config required when use_stub_nodes is false` | Missing `AG_ENTRA_*` env | Fill them per `docs/entra-id-setup.md`. |
+| Boot raises `use_stub_nodes=True is refused when environment='prod'` | Stub auth enabled in prod | Remove `AG_USE_STUB_NODES=1` or set `AG_ENVIRONMENT=dev`. |
+| `401 unauthorized` on every request | JWT audience/issuer mismatch | Check `accessTokenAcceptedVersion: 2` in the Entra app manifest. |
+| `401 consent_required` with `claims` field | First-use Graph-scope consent gap | Frontend handles via `acquireTokenPopup({ claims })`. Admin can pre-grant by visiting the consent URL in the setup doc. |
 | Run ends `pending_transcript` | Teams still processing | Wait, then `POST /runs/{id}/resume`. |
 | Anthropic `401` | Bad key | Check `AG_ANTHROPIC_API_KEY`. |
-| Run ends `failed` with "All ffmpeg chunks failed" | Recording is audio-only or codec issue | Check the recording's video stream. |
+| Recording 403 | User attended but didn't organize | Known v1 limitation — delegated `OnlineMeetingRecording.Read.All` is organizer-only. |
+| Run ends `failed` with "All ffmpeg chunks failed" | Audio-only / codec issue | Check the recording's video stream. |
 | Long meeting → slow synthesis | Map-reduce path engaged | Expected. Watch logs for `claude_summary.map_reduce`. |
 
 ## Tests
@@ -86,7 +102,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-55 tests, no network access required (MCP and Claude both stubbed at the wrapper boundary; real ffmpeg runs on the bundled 14 KB fixture mp4).
+83+ tests, no network access required (Entra discovery + JWKS + OBO + Graph + Claude all stubbed; real ffmpeg runs on a bundled 14 KB fixture mp4).
 
 ## Production note — Postgres checkpointer
 
@@ -115,17 +131,19 @@ rm api/data/checkpoints.sqlite       # also reset graph state
 ```
 src/agentgenesis_api/
 ├── main.py                  # FastAPI app factory + lifespan
-├── config.py                # AG_* Settings via pydantic-settings
+├── config.py                # AG_* Settings via pydantic-settings (incl. Entra)
 ├── logging.py               # structlog wiring
+├── auth/                    # Entra JWT validation + OBO TokenBroker + User
 ├── schemas/                 # Pydantic Story/Summary/Run/Segment
-├── mcp/                     # TeamsMCPClient + exceptions + models
+├── mcp/                     # GraphClient (replaced TeamsMCPClient) + shared exceptions/models
 ├── synthesis/               # ClaudeClient + prompts + token counter + map_reduce
 ├── graph/
+│   ├── auth_context.py      # current_user ContextVar (per-task)
 │   ├── builder.py           # StateGraph topology
 │   ├── checkpointer.py      # AsyncSqliteSaver factory
-│   ├── runner.py            # GraphRunner — submit / resume / track
+│   ├── runner.py            # GraphRunner — submit(meeting_id, user) / resume(run_id, user)
 │   ├── state.py             # GraphState TypedDict + reducers
 │   ├── deps.py              # NodeDeps DI container
 │   └── nodes/               # Real node modules + _stubs.py
-└── api/                     # FastAPI routers (mcp, meetings, runs)
+└── api/                     # FastAPI routers (meetings, runs)
 ```

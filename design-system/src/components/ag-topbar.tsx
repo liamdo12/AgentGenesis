@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Icon, type IconName } from '../lib/icons';
 
 export type TabId = 'Meetings' | 'Stories' | 'Dashboard';
@@ -7,6 +8,10 @@ type TopBarProps = {
   onTab?: (id: TabId) => void;
   dark?: boolean;
   onToggleDark?: () => void;
+  // Slot for app-supplied right-side content (e.g. auth button). When provided,
+  // it replaces the default Search/theme/status/avatar block. Per red-team
+  // Finding 11 of the SSO plan.
+  right?: ReactNode;
 };
 
 const TABS: { id: TabId; icon: IconName }[] = [
@@ -15,7 +20,13 @@ const TABS: { id: TabId; icon: IconName }[] = [
   { id: 'Dashboard', icon: 'Dash' },
 ];
 
-export function AgTopBar({ activeTab = 'Stories', onTab, dark, onToggleDark }: TopBarProps) {
+export function AgTopBar({
+  activeTab = 'Stories',
+  onTab,
+  dark,
+  onToggleDark,
+  right,
+}: TopBarProps) {
   return (
     <div className="ag-topbar">
       <div className="ag-brand">
@@ -42,24 +53,28 @@ export function AgTopBar({ activeTab = 'Stories', onTab, dark, onToggleDark }: T
         })}
       </div>
       <div className="ag-topbar-right">
-        <button
-          type="button"
-          className="ag-btn"
-          data-variant="ghost"
-          style={{ height: 28, padding: '0 8px', gap: 8 }}
-          title="Search"
-        >
-          <Icon.Search width={12} height={12} />
-          <span style={{ color: 'var(--ag-text-muted)' }}>Search</span>
-          <span className="ag-kbd">⌘K</span>
-        </button>
-        {onToggleDark && (
-          <button type="button" className="ag-iconbtn" onClick={onToggleDark} title="Toggle theme">
-            {dark ? <Icon.Sun /> : <Icon.Moon />}
-          </button>
+        {right ?? (
+          <>
+            <button
+              type="button"
+              className="ag-btn"
+              data-variant="ghost"
+              style={{ height: 28, padding: '0 8px', gap: 8 }}
+              title="Search"
+            >
+              <Icon.Search width={12} height={12} />
+              <span style={{ color: 'var(--ag-text-muted)' }}>Search</span>
+              <span className="ag-kbd">⌘K</span>
+            </button>
+            {onToggleDark && (
+              <button type="button" className="ag-iconbtn" onClick={onToggleDark} title="Toggle theme">
+                {dark ? <Icon.Sun /> : <Icon.Moon />}
+              </button>
+            )}
+            <span className="ag-status-pill">Claude · Connected</span>
+            <span className="ag-avatar">RP</span>
+          </>
         )}
-        <span className="ag-status-pill">Claude · Connected</span>
-        <span className="ag-avatar">RP</span>
       </div>
     </div>
   );
