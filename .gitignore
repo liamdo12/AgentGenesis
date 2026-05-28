@@ -101,3 +101,10 @@ worktrees/
 release-manifest.json
 plans/
 .history
+
+# Python backend (api/)
+api/.venv/
+api/data/
+api/__pycache__/
+api/.pytest_cache/
+api/.ruff_cache/

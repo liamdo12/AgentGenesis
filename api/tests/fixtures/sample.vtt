@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:04.500
+<v Alice Doe>Let's kick off the sprint review.</v>
+
+00:00:05.000 --> 00:00:11.250
+<v Bob Smith>I have three updates from the auth team.</v>
+
+00:00:12.000 --> 00:00:15.000
+A line with no speaker tag at all.
+
+00:00:16.000 --> 00:00:19.000
+<v Carol Lee><b>Bold</b> nested formatting</v>
