@@ -30,8 +30,8 @@ from agentgenesis_api.graph.builder import build_graph
 from agentgenesis_api.graph.checkpointer import build_checkpointer
 from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.logging import get_logger
-from agentgenesis_api.mcp import GraphClient
 from agentgenesis_api.schemas import Run, RunStatus
+from agentgenesis_api.sources import GraphClient
 from agentgenesis_api.synthesis import ClaudeClient
 
 log = get_logger("agentgenesis_api.graph.runner")

@@ -18,12 +18,12 @@ from pydantic import HttpUrl
 
 from agentgenesis_api.config import Settings
 from agentgenesis_api.graph.runner import GraphRunner
-from agentgenesis_api.mcp import (
+from agentgenesis_api.schemas import MeetingSummary, RunStatus
+from agentgenesis_api.sources import (
     MeetingRef,
     RecordingArtifact,
     TranscriptArtifact,
 )
-from agentgenesis_api.schemas import MeetingSummary, RunStatus
 from agentgenesis_api.synthesis.schemas import (
     MultimodalContext,  # noqa: F401 — keeps import side-effect chain stable
 )

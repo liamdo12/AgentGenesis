@@ -14,8 +14,8 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any, TypedDict
 
-from agentgenesis_api.mcp import MeetingRef, TranscriptArtifact
 from agentgenesis_api.schemas import MeetingSummary, StoriesOutput
+from agentgenesis_api.sources import MeetingRef, TranscriptArtifact
 
 
 def _take_last(_a, b):

@@ -12,11 +12,11 @@ from pydantic import SecretStr
 
 from agentgenesis_api.auth.models import User
 from agentgenesis_api.config import Settings
-from agentgenesis_api.mcp import (
-    MCPToolError,
+from agentgenesis_api.sources import (
+    SourceCallError,
     TranscriptNotReady,
 )
-from agentgenesis_api.mcp.graph_client import GraphClient
+from agentgenesis_api.sources.graph_client import GraphClient
 
 
 class _FakeBroker:
@@ -185,7 +185,7 @@ async def test_403_carries_status() -> None:
 
     c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
     try:
-        with pytest.raises(MCPToolError) as exc:
+        with pytest.raises(SourceCallError) as exc:
             await c.list_meeting_recordings(_user())
         assert exc.value.status == 403
     finally:
@@ -195,7 +195,7 @@ async def test_403_carries_status() -> None:
 @respx.mock
 async def test_429_with_retry_after_then_succeeds() -> None:
     """429 → backoff (capped) → retry succeeds."""
-    import agentgenesis_api.mcp.graph_client as gc
+    import agentgenesis_api.sources.graph_client as gc
 
     original = gc._BASE_BACKOFF_SEC
     gc._BASE_BACKOFF_SEC = 0.0

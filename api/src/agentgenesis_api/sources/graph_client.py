@@ -25,18 +25,18 @@ import httpx
 from agentgenesis_api.auth.token_broker import TokenBroker
 from agentgenesis_api.config import Settings
 from agentgenesis_api.logging import get_logger
-from agentgenesis_api.mcp.exceptions import (
-    MCPToolError,
-    MCPTransportError,
+from agentgenesis_api.sources.exceptions import (
+    SourceCallError,
+    SourceTransportError,
     TranscriptNotReady,
 )
-from agentgenesis_api.mcp.models import (
+from agentgenesis_api.sources.models import (
     MeetingRef,
     RecordingArtifact,
     TranscriptArtifact,
 )
 
-log = get_logger("agentgenesis_api.mcp.graph_client")
+log = get_logger("agentgenesis_api.sources.graph_client")
 
 # Calendar-walk window. Hardcoded per red-team Scope F9 (no operator knob).
 _LOOKBACK_DAYS = 30
@@ -78,7 +78,7 @@ class GraphClient:
                 # Skip meetings with no recordings — caller wants recordings only.
                 if not await self._has_any_recording(user, meeting["id"]):
                     continue
-            except MCPToolError as e:
+            except SourceCallError as e:
                 # Per-meeting 403/404 → skip this row, keep walking.
                 log.info("graph.list.skip", meeting_id=online.get("conferenceId"), status=e.status)
                 continue
@@ -127,7 +127,7 @@ class GraphClient:
         data = await self._authed_get_json(user, list_url)
         recordings = data.get("value", [])
         if not recordings:
-            raise MCPToolError("get_recording", "no recordings on meeting", status=404)
+            raise SourceCallError("get_recording", "no recordings on meeting", status=404)
         recordings.sort(key=lambda r: r.get("createdDateTime", ""), reverse=True)
         rid = recordings[0]["id"]
         return RecordingArtifact(
@@ -145,7 +145,7 @@ class GraphClient:
         data = await self._authed_get_json(user, url)
         items = data.get("value", [])
         if not items:
-            raise MCPToolError("resolve_meeting", "no match for join_url", status=404)
+            raise SourceCallError("resolve_meeting", "no match for join_url", status=404)
         return items[0]
 
     async def _has_any_recording(self, user, meeting_id: str) -> bool:
@@ -183,12 +183,12 @@ class GraphClient:
                 continue
             return resp
         # Exhausted retries due to transport errors only.
-        raise MCPTransportError(f"Graph call to {url} failed: {last_err}")
+        raise SourceTransportError(f"Graph call to {url} failed: {last_err}")
 
     @staticmethod
     def _raise_tool_error(tool: str, resp: httpx.Response) -> None:
         body_excerpt = (resp.text or "")[:300]
-        raise MCPToolError(tool, body_excerpt, status=resp.status_code)
+        raise SourceCallError(tool, body_excerpt, status=resp.status_code)
 
 
 def _parse_iso(value: str) -> datetime:

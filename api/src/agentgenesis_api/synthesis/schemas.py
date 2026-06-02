@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from agentgenesis_api.mcp import MeetingRef
+from agentgenesis_api.sources import MeetingRef
 
 
 class FrameRef(BaseModel):

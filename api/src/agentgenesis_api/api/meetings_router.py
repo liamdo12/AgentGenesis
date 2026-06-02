@@ -11,7 +11,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from agentgenesis_api.auth import User, require_user
-from agentgenesis_api.mcp import MCPToolError, MCPTransportError, MeetingRef
+from agentgenesis_api.sources import MeetingRef, SourceCallError, SourceTransportError
 
 router = APIRouter()
 
@@ -31,9 +31,9 @@ async def list_meetings(
         return hit[1]
     try:
         refs = await request.app.state.graph.list_meeting_recordings(user, limit=limit)
-    except MCPTransportError as e:
+    except SourceTransportError as e:
         raise HTTPException(status_code=503, detail=f"Graph unreachable: {e}") from e
-    except MCPToolError as e:
+    except SourceCallError as e:
         # Map by HTTP status (Finding 8): 5xx/408/429 → 502; 4xx → surface as-is.
         upstream = e.status or 502
         if 500 <= upstream < 600 or upstream in (408, 429):
