@@ -16,8 +16,8 @@ from pydantic import BaseModel, HttpUrl
 from agentgenesis_api.config import Settings
 from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.graph.nodes import claude_draft_stories, claude_summary, merge_context
+from agentgenesis_api.msgraph import MeetingRef
 from agentgenesis_api.schemas import MeetingSummary
-from agentgenesis_api.sources import MeetingRef
 from agentgenesis_api.synthesis.frame_selection import pick_evenly
 from agentgenesis_api.synthesis.token_counter import (
     estimate_text_tokens,

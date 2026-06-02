@@ -16,7 +16,7 @@ from agentgenesis_api.auth.dependency import build_jwks_client
 from agentgenesis_api.config import Settings
 from agentgenesis_api.graph.runner import GraphRunner
 from agentgenesis_api.logging import configure_logging, get_logger
-from agentgenesis_api.sources import GraphClient
+from agentgenesis_api.msgraph import GraphClient
 
 
 @asynccontextmanager

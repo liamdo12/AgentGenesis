@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from agentgenesis_api.auth.token_broker import TokenBroker
 from agentgenesis_api.config import Settings
-from agentgenesis_api.sources import GraphClient
+from agentgenesis_api.msgraph import GraphClient
 from agentgenesis_api.synthesis import ClaudeClient
 
 

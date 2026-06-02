@@ -1,7 +1,7 @@
-"""Direct Microsoft Graph client, replacing the deleted TeamsMCPClient.
+"""Microsoft Graph HTTP client.
 
-Per-call delegated tokens come from `TokenBroker.acquire_graph_token` (Phase 3),
-so every Graph request runs under the calling user's identity.
+Per-call delegated tokens come from `TokenBroker.acquire_graph_token` (Phase 3
+of the SSO plan), so every Graph request runs under the calling user's identity.
 
 `list_meeting_recordings` does a calendar walk:
   1. GET /me/events filtered by isOnlineMeeting + start date window.
@@ -25,18 +25,18 @@ import httpx
 from agentgenesis_api.auth.token_broker import TokenBroker
 from agentgenesis_api.config import Settings
 from agentgenesis_api.logging import get_logger
-from agentgenesis_api.sources.exceptions import (
-    SourceCallError,
-    SourceTransportError,
+from agentgenesis_api.msgraph.exceptions import (
+    MsGraphCallError,
+    MsGraphTransportError,
     TranscriptNotReady,
 )
-from agentgenesis_api.sources.models import (
+from agentgenesis_api.msgraph.models import (
     MeetingRef,
     RecordingArtifact,
     TranscriptArtifact,
 )
 
-log = get_logger("agentgenesis_api.sources.graph_client")
+log = get_logger("agentgenesis_api.msgraph.graph_client")
 
 # Calendar-walk window. Hardcoded per red-team Scope F9 (no operator knob).
 _LOOKBACK_DAYS = 30
@@ -78,7 +78,7 @@ class GraphClient:
                 # Skip meetings with no recordings — caller wants recordings only.
                 if not await self._has_any_recording(user, meeting["id"]):
                     continue
-            except SourceCallError as e:
+            except MsGraphCallError as e:
                 # Per-meeting 403/404 → skip this row, keep walking.
                 log.info("graph.list.skip", meeting_id=online.get("conferenceId"), status=e.status)
                 continue
@@ -127,7 +127,7 @@ class GraphClient:
         data = await self._authed_get_json(user, list_url)
         recordings = data.get("value", [])
         if not recordings:
-            raise SourceCallError("get_recording", "no recordings on meeting", status=404)
+            raise MsGraphCallError("get_recording", "no recordings on meeting", status=404)
         recordings.sort(key=lambda r: r.get("createdDateTime", ""), reverse=True)
         rid = recordings[0]["id"]
         return RecordingArtifact(
@@ -145,7 +145,7 @@ class GraphClient:
         data = await self._authed_get_json(user, url)
         items = data.get("value", [])
         if not items:
-            raise SourceCallError("resolve_meeting", "no match for join_url", status=404)
+            raise MsGraphCallError("resolve_meeting", "no match for join_url", status=404)
         return items[0]
 
     async def _has_any_recording(self, user, meeting_id: str) -> bool:
@@ -183,12 +183,12 @@ class GraphClient:
                 continue
             return resp
         # Exhausted retries due to transport errors only.
-        raise SourceTransportError(f"Graph call to {url} failed: {last_err}")
+        raise MsGraphTransportError(f"Graph call to {url} failed: {last_err}")
 
     @staticmethod
     def _raise_tool_error(tool: str, resp: httpx.Response) -> None:
         body_excerpt = (resp.text or "")[:300]
-        raise SourceCallError(tool, body_excerpt, status=resp.status_code)
+        raise MsGraphCallError(tool, body_excerpt, status=resp.status_code)
 
 
 def _parse_iso(value: str) -> datetime:

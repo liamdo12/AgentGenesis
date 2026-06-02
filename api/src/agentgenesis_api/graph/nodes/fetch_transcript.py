@@ -14,7 +14,7 @@ from agentgenesis_api.auth.models import STUB_USER
 from agentgenesis_api.graph.auth_context import current_user
 from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.graph.nodes._shared import lang_detect, vtt_parser
-from agentgenesis_api.sources import TranscriptNotReady
+from agentgenesis_api.msgraph import TranscriptNotReady
 
 
 def build(deps: NodeDeps):

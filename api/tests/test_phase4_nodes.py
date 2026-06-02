@@ -17,7 +17,7 @@ from agentgenesis_api.graph.nodes import (
     fetch_recording,
     fetch_transcript,
 )
-from agentgenesis_api.sources import (
+from agentgenesis_api.msgraph import (
     MeetingRef,
     RecordingArtifact,
     TranscriptArtifact,
