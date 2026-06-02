@@ -37,11 +37,14 @@ _UNAUTHORIZED = HTTPException(
 
 
 def _get_settings(request: Request) -> Settings:
-    return request.app.state.settings
+    return getattr(request.app.state, "settings", None) or Settings()  # type: ignore[call-arg]
 
 
-def _get_jwks_client(request: Request) -> PyJWKClient:
-    return request.app.state.jwks_client
+def _get_jwks_client(request: Request) -> PyJWKClient | None:
+    # `getattr` with a default so missing-state doesn't raise AttributeError —
+    # require_user short-circuits on stub_nodes before this is needed, but a
+    # misconfigured lifespan was producing confusing 500s.
+    return getattr(request.app.state, "jwks_client", None)
 
 
 def build_jwks_client(settings: Settings) -> PyJWKClient:
@@ -53,10 +56,15 @@ def build_jwks_client(settings: Settings) -> PyJWKClient:
 async def require_user(
     authorization: str | None = Header(default=None),
     settings: Settings = Depends(_get_settings),  # noqa: B008 — FastAPI canonical
-    jwks_client: PyJWKClient = Depends(_get_jwks_client),  # noqa: B008
+    jwks_client: PyJWKClient | None = Depends(_get_jwks_client),  # noqa: B008
 ) -> User:
     if settings.use_stub_nodes:
         return STUB_USER
+    if jwks_client is None:
+        # Real-auth mode but the lifespan didn't attach a JWKS client.
+        # Surface a clear 500 rather than the cryptic AttributeError.
+        log.error("auth.misconfigured", reason="jwks_client missing on app.state")
+        raise _UNAUTHORIZED
 
     if not authorization:
         raise _UNAUTHORIZED
