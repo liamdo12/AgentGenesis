@@ -12,7 +12,6 @@ dependencies = [
     "pydantic-settings>=2.5",
     "structlog>=24.4",
     "aiofiles>=24.1",
-    "python-magic>=0.4.27",
     "langgraph>=1.2.2",
     "langgraph-checkpoint-sqlite>=3.1.0",
     "langdetect>=1.0.9",
