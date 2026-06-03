@@ -1,15 +1,52 @@
-"""Graph node: build the MultimodalContext that the Claude nodes consume."""
+"""Graph node: build the MultimodalContext that the Claude nodes consume.
+
+The build logic is exposed as `build_multimodal_context_from_state` so
+downstream nodes (claude_summary) can re-derive the context idempotently
+if a partial LangGraph checkpoint reaches them with the slice missing —
+which can happen after server-restart during a paused parallel branch.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
+from agentgenesis_api.config import Settings
 from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.logging import get_logger
 from agentgenesis_api.synthesis.frame_selection import pick_evenly
 from agentgenesis_api.synthesis.schemas import MultimodalContext, TimeWindow
 
 log = get_logger("agentgenesis_api.graph.nodes.merge_context")
+
+
+def build_multimodal_context_from_state(
+    state: dict[str, Any], settings: Settings
+) -> MultimodalContext:
+    """Pure helper: derive a MultimodalContext from whatever state holds.
+
+    Tolerant of missing `frames_manifest` (treats as empty manifest) and
+    empty `transcript_segments`. Requires `meeting_ref` — raises KeyError
+    if absent (callers should pre-check and surface a clearer error).
+    """
+    meeting_ref = state["meeting_ref"]
+    manifest = state.get("frames_manifest") or {}
+    manifest_frames = manifest.get("frames") or []
+    segments = state.get("transcript_segments") or []
+    duration = manifest.get("video", {}).get("duration_sec") or _segments_duration(segments)
+    detected = _detected_language_from_warnings(state.get("warnings") or [])
+
+    selected = pick_evenly(manifest_frames, settings.synth_max_frames_in_context)
+    window_size = settings.chunk_window_sec
+    windows = _build_windows(segments, manifest_frames, window_size, duration)
+
+    return MultimodalContext(
+        meeting=meeting_ref,
+        duration_sec=duration,
+        detected_language=detected,
+        windows=windows,
+        selected_frames=selected,
+        frame_evidence_used=(len(selected) >= settings.min_useful_frames),
+    )
 
 
 def build(deps: NodeDeps):
@@ -34,34 +71,14 @@ def build(deps: NodeDeps):
                 "merge_context: state missing 'meeting_ref' — fetch_meeting_ref did not run "
                 f"(present keys: {sorted(state.keys())})"
             )
-        meeting_ref = state["meeting_ref"]
-        manifest = state.get("frames_manifest") or {}
-        manifest_frames = manifest.get("frames") or []
-        segments = state.get("transcript_segments") or []
-        duration = manifest.get("video", {}).get("duration_sec") or _segments_duration(segments)
 
-        # detected_language was pushed into state.warnings by fetch_transcript.
-        detected = _detected_language_from_warnings(state.get("warnings") or [])
-
-        selected = pick_evenly(manifest_frames, deps.settings.synth_max_frames_in_context)
-        window_size = deps.settings.chunk_window_sec
-        windows = _build_windows(segments, manifest_frames, window_size, duration)
-
-        ctx = MultimodalContext(
-            meeting=meeting_ref,
-            duration_sec=duration,
-            detected_language=detected,
-            windows=windows,
-            selected_frames=selected,
-            frame_evidence_used=(len(selected) >= deps.settings.min_useful_frames),
-        )
-
+        ctx = build_multimodal_context_from_state(state, deps.settings)
         log.info(
             "merge_context.built",
             run_id=state.get("run_id"),
-            windows=len(windows),
-            selected_frames=len(selected),
-            duration_sec=duration,
+            windows=len(ctx.windows),
+            selected_frames=len(ctx.selected_frames),
+            duration_sec=ctx.duration_sec,
         )
         return {
             "multimodal_context": ctx.model_dump(),
