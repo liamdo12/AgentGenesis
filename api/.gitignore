@@ -3,7 +3,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-data/
+data/*
+# Stub fixtures: track README + checked-in example VTT; ignore user-supplied binaries/transcripts.
+!data/stub/
+data/stub/*
+!data/stub/README.md
+!data/stub/sample.example.vtt
 .env
 *.egg-info/
 dist/

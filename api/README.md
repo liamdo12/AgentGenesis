@@ -33,6 +33,28 @@ uv run uvicorn agentgenesis_api.main:create_app --factory --port 8000 --reload
 
 `--factory` is mandatory — the app instance is constructed by `create_app()` so Settings validation runs at app-startup time, not at module-import time.
 
+### Stub mode
+
+For local development without Microsoft Graph access or Anthropic credentials:
+
+```bash
+# One-time setup:
+cp api/data/stub/sample.example.vtt api/data/stub/sample.vtt
+# Then drop a sample.mp4 into api/data/stub/ (see api/data/stub/README.md).
+
+# Boot:
+AG_USE_STUB_NODES=1 AG_ANTHROPIC_API_KEY=stub \
+  uv run uvicorn agentgenesis_api.main:create_app --factory --port 8000
+
+# Submit a run:
+curl -X POST http://127.0.0.1:8000/runs \
+  -H "Authorization: Bearer stub" \
+  -H "Content-Type: application/json" \
+  -d '{"meeting_id": "stub-meeting-1"}'
+```
+
+Stub mode loads the local sample.mp4 + sample.vtt, runs **real** ffmpeg frame extraction + multimodal merge, then returns canned but real-shaped `MeetingSummary` + `StoriesOutput`. No Microsoft Graph or Anthropic calls. ffmpeg is optional — without it, `extract_frames` falls back to an empty manifest and the run still reaches `done`. See `api/data/stub/README.md` for fixture details.
+
 ## Authentication
 
 Every endpoint except `/healthz` requires a **Bearer JWT** from Microsoft Entra ID (v2 access token, `aud` = client_id GUID, scope `api://agentgenesis-api/access_as_user`). The backend then mints a per-user Graph token via the **On-Behalf-Of (OBO)** flow for every Graph call. Run authorship is tracked via `Run.user_oid`; cross-user reads return 404 (never 403, to avoid run-id disclosure).

@@ -8,7 +8,9 @@ but don't abort siblings.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +29,35 @@ def build(deps: NodeDeps):
             return {"phase_label": "Extracting frames…", "progress": 0.75}
 
         src = Path(state["recording_path"])
+        # Stub-mode fallback: when ffmpeg is missing OR the fixture mp4 wasn't
+        # supplied, skip the real path and emit a canned, syntactically-valid
+        # manifest so merge_context and /runs/{id}/files/manifest.json keep working.
+        if deps.stub_mode and (shutil.which("ffmpeg") is None or not src.is_file()):
+            run_id = state["run_id"]
+            out_dir = deps.settings.data_dir / "runs" / run_id
+            out_dir.mkdir(parents=True, exist_ok=True)
+            canned = {
+                "video": {
+                    "duration_sec": 30.0,
+                    "frame_interval_sec": deps.settings.frame_interval_sec,
+                    "chunk_window_sec": deps.settings.chunk_window_sec,
+                },
+                "chunks": [],
+                "frames": [],
+                "useful_frame_count": 0,
+            }
+            (out_dir / "manifest.json").write_text(json.dumps(canned, indent=2))
+            reason = "ffmpeg unavailable" if shutil.which("ffmpeg") is None else "fixture mp4 missing"
+            log.warning("extract_frames.stub.using_canned_manifest", run_id=run_id, reason=reason)
+            return {
+                "frames_manifest": canned,
+                "warnings": [f"{reason} in stub mode; canned frames manifest used"],
+                "phase_label": "Extracting frames…",
+                "progress": 0.75,
+            }
+
         if not src.is_file():
             raise RuntimeError(f"recording not found at {src}")
-
         duration = await ffprobe.get_duration(src)
         chunks = plan_chunks(duration, deps.settings.chunk_window_sec)
         if not chunks:

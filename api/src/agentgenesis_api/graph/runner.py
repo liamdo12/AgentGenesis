@@ -59,22 +59,33 @@ class GraphRunner:
         self._stack: AsyncExitStack | None = None
         self._graph: CompiledStateGraph | None = None
         self._lock = asyncio.Lock()
+        # Stub mode opt-in: the lifespan sets this to a pre-built NodeDeps so
+        # `startup()` doesn't have to re-derive it from a None graph client.
+        # Private attribute — kept off __init__ to preserve the public signature
+        # the existing tests assert against.
+        self._stub_deps: NodeDeps | None = None
 
     async def startup(self) -> None:
         self._stack = AsyncExitStack()
         checkpointer = await self._stack.enter_async_context(build_checkpointer(self._settings))
-        deps = (
-            NodeDeps(
+        if self._stub_deps is not None:
+            deps: NodeDeps | None = self._stub_deps
+        elif self._graph_client is not None:
+            deps = NodeDeps(
                 settings=self._settings,
                 graph=self._graph_client,
                 broker=self._broker,
                 claude=self._claude,
             )
-            if self._graph_client is not None
-            else None
-        )
+        else:
+            deps = None
         self._graph = build_graph(checkpointer, deps=deps)
-        log.info("graph.startup", data_dir=str(self._settings.data_dir), wired=deps is not None)
+        log.info(
+            "graph.startup",
+            data_dir=str(self._settings.data_dir),
+            wired=deps is not None,
+            stub_mode=deps.stub_mode if deps is not None else False,
+        )
 
     async def shutdown(self) -> None:
         # Cancel anything in-flight before tearing down the checkpointer.

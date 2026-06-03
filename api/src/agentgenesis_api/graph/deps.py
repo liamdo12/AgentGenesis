@@ -17,6 +17,7 @@ TeamsMCPClient was deleted.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from agentgenesis_api.auth.token_broker import TokenBroker
 from agentgenesis_api.config import Settings
@@ -30,3 +31,8 @@ class NodeDeps:
     graph: GraphClient | None             # None in stub mode
     broker: TokenBroker | None = None     # required for fetch_recording Bearer; None in stub
     claude: ClaudeClient | None = None    # None in tests; main wires real one
+    # Stub-mode plumbing — selected by builder.py when stub_mode is True.
+    # Stub fetch_* nodes load fixtures from these paths instead of calling Graph.
+    stub_mode: bool = False
+    stub_video_path: Path | None = None
+    stub_vtt_path: Path | None = None

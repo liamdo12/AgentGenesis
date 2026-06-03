@@ -14,6 +14,7 @@ from agentgenesis_api.api.runs_router import router as runs_router
 from agentgenesis_api.auth import TokenBroker
 from agentgenesis_api.auth.dependency import build_jwks_client
 from agentgenesis_api.config import Settings
+from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.graph.runner import GraphRunner
 from agentgenesis_api.logging import configure_logging, get_logger
 from agentgenesis_api.msgraph import GraphClient
@@ -26,23 +27,45 @@ async def _lifespan(app: FastAPI):
     log = get_logger("agentgenesis_api.main")
     log.info("startup", data_dir=str(settings.data_dir), claude_model=settings.claude_model)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    if not settings.use_stub_nodes and shutil.which("ffmpeg") is None:
-        raise RuntimeError("ffmpeg not found on PATH; required for frame extraction.")
+    if shutil.which("ffmpeg") is None:
+        if settings.use_stub_nodes:
+            # Stub-mode contributors may not have ffmpeg installed; the
+            # extract_frames stub-fallback handles the missing-binary path.
+            log.warning(
+                "ffmpeg.missing",
+                detail="ffmpeg not on PATH; extract_frames will fall back to a canned manifest.",
+            )
+        else:
+            raise RuntimeError("ffmpeg not found on PATH; required for frame extraction.")
     # PyJWKClient — only built when we're actually validating real tokens.
     # Stub mode skips this entirely; require_user returns STUB_USER without
     # ever touching the JWKS endpoint.
     app.state.jwks_client = None if settings.use_stub_nodes else build_jwks_client(settings)
     app.state.token_broker = TokenBroker(settings)
-    # GraphClient replaces the deleted TeamsMCPClient. Per Phase 4 / Finding 15.
-    app.state.graph = GraphClient(settings, app.state.token_broker)
     if settings.use_stub_nodes:
+        # Stub mode: skip the real Graph / Claude clients entirely.
+        app.state.graph = None
         app.state.claude = None
-        app.state.runner = GraphRunner(settings, graph=None, claude=None)
+        app.state.runner = GraphRunner(settings, graph=None, broker=None, claude=None)
+        app.state.runner._stub_deps = NodeDeps(
+            settings=settings,
+            graph=None,
+            broker=None,
+            claude=None,
+            stub_mode=True,
+            stub_video_path=settings.data_dir / "stub" / "sample.mp4",
+            stub_vtt_path=settings.data_dir / "stub" / "sample.vtt",
+        )
     else:
+        # GraphClient replaces the deleted TeamsMCPClient. Per Phase 4 / Finding 15.
+        app.state.graph = GraphClient(settings, app.state.token_broker)
         from agentgenesis_api.synthesis import ClaudeClient
         app.state.claude = ClaudeClient(settings)
         app.state.runner = GraphRunner(
-            settings, graph=app.state.graph, claude=app.state.claude
+            settings,
+            graph=app.state.graph,
+            broker=app.state.token_broker,
+            claude=app.state.claude,
         )
     await app.state.runner.startup()
     try:
@@ -52,7 +75,8 @@ async def _lifespan(app: FastAPI):
         if app.state.claude is not None:
             await app.state.claude.aclose()
         await app.state.token_broker.aclose()
-        await app.state.graph.aclose()
+        if app.state.graph is not None:
+            await app.state.graph.aclose()
         log.info("shutdown")
 
 

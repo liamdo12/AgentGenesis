@@ -1,0 +1,21 @@
+WEBVTT
+Kind: captions
+Language: en
+
+00:00:00.000 --> 00:00:03.000
+Alright team, kicking off the requirements review.
+
+00:00:03.000 --> 00:00:08.000
+First topic: we need to redesign the dashboard so users can filter by date range.
+
+00:00:08.000 --> 00:00:14.000
+Acceptance criteria: filter must support last 7 days, last 30 days, and custom range.
+
+00:00:14.000 --> 00:00:20.000
+Second item: the export feature is too slow. We should chunk the queries on the server.
+
+00:00:20.000 --> 00:00:26.000
+Decision: we'll cap export size at 10k rows per chunk and stream the response.
+
+00:00:26.000 --> 00:00:30.000
+Action item: Sarah owns the chunking work, due end of sprint.

@@ -104,7 +104,13 @@ plans/
 
 # Python backend (api/)
 api/.venv/
-api/data/
+api/data/*
 api/__pycache__/
 api/.pytest_cache/
 api/.ruff_cache/
+
+# Stub fixtures: track the README + checked-in example VTT; ignore user-supplied binaries/transcripts.
+!api/data/stub/
+api/data/stub/*
+!api/data/stub/README.md
+!api/data/stub/sample.example.vtt
