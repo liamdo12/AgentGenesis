@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     recording_download_timeout_sec: int = 1800  # 30 min hard cap
     recording_chunk_bytes: int = 1 << 20  # 1 MiB streaming chunks
 
+    # Persistence (Phase 1 — frontend integration plan)
+    # Default sqlite + aiosqlite for dev/test. Override with AG_DATABASE_URL
+    # to point at SQL Server (`mssql+aioodbc://...`) — prod also requires
+    # out-of-band DDL provisioning; see api/README.md.
+    database_url: str = "sqlite+aiosqlite:///./data/agentgenesis.db"
+
     # Observability
     log_format: str = "console"  # "console" | "json"
 

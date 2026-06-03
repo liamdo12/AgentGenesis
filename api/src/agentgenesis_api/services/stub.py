@@ -8,8 +8,11 @@ stub mode by deleting this file and updating the lifespan to always call
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 import shutil
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -19,7 +22,7 @@ from agentgenesis_api.config import Settings
 from agentgenesis_api.logging import get_logger
 from agentgenesis_api.msgraph import MeetingRef, TranscriptArtifact
 from agentgenesis_api.schemas import MeetingSummary, StoriesOutput, Story
-from agentgenesis_api.services.protocols import PipelineServices
+from agentgenesis_api.services.protocols import ChatChunk, PipelineServices
 from agentgenesis_api.services.real import _RealFrames
 from agentgenesis_api.synthesis.schemas import MultimodalContext
 
@@ -105,8 +108,70 @@ class _StubFrames:
         return await self.real_frames.extract(recording_path, run_dir, settings)
 
 
+_STORY_ID_PATTERN = re.compile(r"AG-\d+")
+
+
 @dataclass
 class _StubSynth:
+    async def stream_chat(
+        self,
+        user_message: str,
+        chat_history: list[dict],
+        current_stories: StoriesOutput,
+    ) -> AsyncIterator[ChatChunk]:
+        """Deterministic mock chat stream — keyword-routed.
+
+        - "split" → emit a single-edit revision (modify one story; no deletes).
+        - "delete X, Y[, Z…]" → emit a bulk-delete revision (>1 removed_ids).
+        - "delete X" (single) → emit a single-deletion revision.
+        - else → conversational only, no `stories` chunk.
+        """
+        low = user_message.lower()
+        # Token-paced text reply.
+        opening = "Sure — let me take a look. "
+        for tok in opening.split(" "):
+            yield ChatChunk(type="text", text=tok + " ")
+            await asyncio.sleep(0.0)
+
+        mentioned = _STORY_ID_PATTERN.findall(user_message)
+
+        if "delete" in low and len(mentioned) >= 1:
+            removed_ids = mentioned
+            new_stories = [s for s in current_stories.stories if s.id not in set(removed_ids)]
+            new = current_stories.model_copy(update={"stories": new_stories})
+            tail = f"Removing {', '.join(removed_ids)}."
+            for tok in tail.split(" "):
+                yield ChatChunk(type="text", text=tok + " ")
+            yield ChatChunk(
+                type="stories",
+                stories=new.model_dump(mode="json"),
+                removed_ids=removed_ids,
+            )
+            return
+
+        if "split" in low and mentioned:
+            target = mentioned[0]
+            new_stories: list[Story] = []
+            for s in current_stories.stories:
+                if s.id == target:
+                    new_stories.append(s.model_copy(update={"title": s.title + " · UI"}))
+                    new_stories.append(
+                        s.model_copy(update={"id": s.id + "-API", "title": s.title + " · API"})
+                    )
+                else:
+                    new_stories.append(s)
+            new = current_stories.model_copy(update={"stories": new_stories})
+            yield ChatChunk(type="text", text=f"Splitting {target} into UI + API. ")
+            yield ChatChunk(
+                type="stories",
+                stories=new.model_dump(mode="json"),
+                removed_ids=[],
+            )
+            return
+
+        # Pure conversational fallback.
+        yield ChatChunk(type="text", text="No story changes needed.")
+
     async def summarize(
         self, ctx: MultimodalContext, run_dir: Path
     ) -> MeetingSummary:
@@ -186,6 +251,7 @@ class StubServices:
         *,
         stub_video_path: Path | None,
         stub_vtt_path: Path | None,
+        db_session_factory=None,
     ) -> PipelineServices:
         return PipelineServices(
             settings=settings,
@@ -193,4 +259,5 @@ class StubServices:
             recording=_StubRecording(stub_video_path),
             frames=_StubFrames(_RealFrames()),
             synth=_StubSynth(),
+            db_session_factory=db_session_factory,
         )

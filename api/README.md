@@ -124,7 +124,58 @@ uv run pytest
 uv run ruff check .
 ```
 
-83+ tests, no network access required (Entra discovery + JWKS + OBO + Graph + Claude all stubbed; real ffmpeg runs on a bundled 14 KB fixture mp4).
+91+ tests, no network access required (Entra discovery + JWKS + OBO + Graph + Claude all stubbed; real ffmpeg runs on a bundled 14 KB fixture mp4). DB tests use per-fixture in-memory SQLite.
+
+## Persistence — runs, approvals, revisions, chat
+
+A second SQLAlchemy-backed store holds the projected `Run` rows, per-user
+story approvals, story revisions (the chat-edit feature persists each
+rewrite as a versioned revision), and chat turn history. The default
+driver is **SQLite + aiosqlite** at `./data/agentgenesis.db`. Override:
+
+```bash
+AG_DATABASE_URL="sqlite+aiosqlite:///./data/agentgenesis.db"
+```
+
+**Multi-worker uvicorn is refused at startup** (single-worker is required
+by the per-run `asyncio.Lock` semantics that serialize revision commits).
+Setting `WEB_CONCURRENCY > 1` raises `RuntimeError` during boot.
+
+### Column additions / schema evolution (dev)
+
+`Base.metadata.create_all` runs in `AG_ENVIRONMENT=dev|test` only, and it
+does **not** add columns to existing tables. If you add a new column to
+`db/models.py`, in dev:
+
+```bash
+rm data/agentgenesis.db   # forces a fresh schema on next boot
+```
+
+The first column-addition post-Phase-1 is the trigger to introduce
+Alembic; until then, dev wipe is fine.
+
+### SQL Server deployment
+
+The driver swap is documented but actual SQL Server connectivity is **not**
+auto-installed nor wired in CI. Prod requires out-of-band DDL provisioning;
+`create_all_if_dev` is a no-op in `AG_ENVIRONMENT=prod`.
+
+1. Install the optional ODBC stack:
+   ```bash
+   uv add aioodbc pyodbc      # or pip install
+   ```
+2. Provision the four tables (`run`, `approval`, `story_revision`,
+   `chat_turn`) manually using your migration tool of choice. Schema is
+   defined in `src/agentgenesis_api/db/models.py`.
+3. Boot with:
+   ```bash
+   AG_DATABASE_URL="mssql+aioodbc://user:pass@server/db?driver=ODBC+Driver+18+for+SQL+Server" \
+   AG_ENVIRONMENT=prod \
+     uv run uvicorn agentgenesis_api.main:create_app --factory --workers 1
+   ```
+4. Reverse-proxy must permit long-lived SSE: nginx `proxy_buffering off;
+   proxy_read_timeout 120s;` or equivalent. The chat endpoint emits 15-second
+   keep-alive comments to satisfy intermediaries that close idle streams.
 
 ## Production note — Postgres checkpointer
 

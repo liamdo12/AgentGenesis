@@ -16,7 +16,7 @@ from agentgenesis_api.schemas import Run
 router = APIRouter()
 
 
-def _get_runner(request: Request) -> GraphRunner:
+def get_runner(request: Request) -> GraphRunner:
     """Pull the runner off app.state with a clear 503 if it's missing.
 
     `app.state.runner` is populated by the lifespan hook. A missing attribute
@@ -46,7 +46,7 @@ async def start_run(
     request: Request,
     user: User = Depends(require_user),  # noqa: B008 — FastAPI canonical
 ) -> dict[str, str]:
-    runner = _get_runner(request)
+    runner = get_runner(request)
     try:
         run = await runner.submit(body.meeting_id, user)
     except RunStoreFull as e:
@@ -60,7 +60,7 @@ async def get_run(
     request: Request,
     user: User = Depends(require_user),  # noqa: B008
 ) -> Run:
-    runner = _get_runner(request)
+    runner = get_runner(request)
     run = await runner.get(run_id, user.oid)
     if run is None:
         raise HTTPException(status_code=404, detail="run not found")
@@ -73,7 +73,7 @@ async def list_runs(
     user: User = Depends(require_user),  # noqa: B008
     limit: int = 100,
 ) -> list[Run]:
-    runner = _get_runner(request)
+    runner = get_runner(request)
     return await runner.list(user.oid, limit=limit)
 
 
@@ -83,7 +83,7 @@ async def resume_run(
     request: Request,
     user: User = Depends(require_user),  # noqa: B008
 ) -> Run:
-    runner = _get_runner(request)
+    runner = get_runner(request)
     try:
         return await runner.resume(run_id, user)
     except KeyError as e:
@@ -97,7 +97,7 @@ async def get_run_file(
     request: Request,
     user: User = Depends(require_user),  # noqa: B008
 ):
-    runner = _get_runner(request)
+    runner = get_runner(request)
     resolved = runner.safe_resolve(run_id, rel_path, user.oid)
     if resolved is None:
         # 404 (not 403) — never disclose whether a run id exists for another user.

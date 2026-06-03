@@ -1,14 +1,14 @@
 """GraphRunner — schedules + tracks extraction runs as asyncio.Tasks.
 
-Two stores of truth interact:
+Three stores of truth interact:
 
 - LangGraph checkpoint (durable, via SqliteSaver) — owns the full graph state.
 - `Run` model (in-memory) — projection of graph state useful for the /runs API.
+- `RunRow` (DB) — persists the projection across server restarts so approvals
+  and chat history can resolve their owning run after a process recycle.
 
-The runner is the only place that writes both. On every graph.astream update
-it copies `phase_label`, `progress`, and (when terminal) `status`/`error` from
-the graph state into the in-memory `Run`. The two never diverge because the
-runner is the single writer.
+The runner is the only place that writes the in-memory + DB stores. Every
+state mutation flows through `_persist_run` so the projections never diverge.
 """
 
 from __future__ import annotations
@@ -21,9 +21,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from langgraph.graph.state import CompiledStateGraph
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from agentgenesis_api.auth.models import User
 from agentgenesis_api.config import Settings
+from agentgenesis_api.db import repository
+from agentgenesis_api.db.models import RunRow
 from agentgenesis_api.graph.auth_context import current_user
 from agentgenesis_api.graph.builder import build_graph
 from agentgenesis_api.graph.checkpointer import build_checkpointer
@@ -48,6 +51,16 @@ class GraphRunner:
         self._stack: AsyncExitStack | None = None
         self._graph: CompiledStateGraph | None = None
         self._lock = asyncio.Lock()
+        # Tracks in-flight chat streams so lifespan can drain before disposing
+        # the engine. Phase 4 owns the bumping; runner just exposes the counter.
+        self._chat_in_flight = 0
+        self._chat_done_evt = asyncio.Event()
+        self._chat_done_evt.set()
+        self._db_session_factory: async_sessionmaker | None = None
+
+    def attach_db(self, session_factory: async_sessionmaker) -> None:
+        """Wire the runner to the DB session factory. Called by lifespan."""
+        self._db_session_factory = session_factory
 
     async def startup(self) -> None:
         self._stack = AsyncExitStack()
@@ -58,6 +71,29 @@ class GraphRunner:
             data_dir=str(self._settings.data_dir),
             wired=self._deps is not None,
         )
+
+    async def hydrate_from_db(self) -> None:
+        """Load persisted Run rows into the in-memory store. Idempotent."""
+        if self._db_session_factory is None:
+            return
+        async with self._db_session_factory() as session:
+            rows = await repository.list_runs_all(session)
+        async with self._lock:
+            for r in rows:
+                if r.id in self._runs:
+                    continue
+                self._runs[r.id] = Run(
+                    id=r.id,
+                    meeting_id=r.meeting_id,
+                    user_oid=r.user_oid,
+                    status=RunStatus(r.status),
+                    progress=r.progress,
+                    error=r.error,
+                    created_at=r.created_at,
+                    finished_at=r.finished_at,
+                    output_dir=r.output_dir,
+                )
+        log.info("runner.hydrate", count=len(rows))
 
     async def shutdown(self) -> None:
         # Cancel anything in-flight before tearing down the checkpointer.
@@ -72,6 +108,32 @@ class GraphRunner:
             await self._stack.aclose()
         self._stack = None
         self._graph = None
+
+    def chat_stream_started(self) -> None:
+        self._chat_in_flight += 1
+        self._chat_done_evt.clear()
+
+    def chat_stream_finished(self) -> None:
+        self._chat_in_flight = max(0, self._chat_in_flight - 1)
+        if self._chat_in_flight == 0:
+            self._chat_done_evt.set()
+
+    async def drain_chat_streams(self, timeout_sec: float = 30.0) -> None:
+        """Wait up to `timeout_sec` for in-flight chats to finish.
+
+        Called before the engine is disposed so background tasks that
+        persist assistant turns don't race the shutdown.
+        """
+        if self._chat_in_flight == 0:
+            return
+        try:
+            await asyncio.wait_for(self._chat_done_evt.wait(), timeout=timeout_sec)
+        except TimeoutError:
+            log.warning(
+                "runner.drain_chat_streams.timeout",
+                in_flight=self._chat_in_flight,
+                timeout_sec=timeout_sec,
+            )
 
     async def submit(self, meeting_id: str, user: User) -> Run:
         if len(self._tasks) >= self._settings.max_concurrent_runs:
@@ -92,6 +154,7 @@ class GraphRunner:
         )
         async with self._lock:
             self._runs[run_id] = run
+        await self._persist_run(run)
         task = asyncio.create_task(self._execute(run_id, resume=False, user=user))
         self._tasks[run_id] = task
         return run
@@ -106,6 +169,7 @@ class GraphRunner:
         async with self._lock:
             run.status = RunStatus.PENDING
             run.error = None
+        await self._persist_run(run)
         task = asyncio.create_task(self._execute(run_id, resume=True, user=user))
         self._tasks[run_id] = task
         return run
@@ -165,6 +229,8 @@ class GraphRunner:
             run.status = _label_to_status(label, current=run.status)
             if state.get("pending_reason") == "transcript_not_ready":
                 run.status = RunStatus.PENDING_TRANSCRIPT
+            snapshot = run.model_copy()
+        await self._persist_run(snapshot)
 
     async def _mark_done(self, run_id: str) -> None:
         async with self._lock:
@@ -175,6 +241,8 @@ class GraphRunner:
                 run.status = RunStatus.DONE
                 run.progress = 1.0
             run.finished_at = datetime.now(UTC)
+            snapshot = run.model_copy()
+        await self._persist_run(snapshot)
 
     async def _mark_failed(self, run_id: str, error: str) -> None:
         async with self._lock:
@@ -184,6 +252,33 @@ class GraphRunner:
             run.status = RunStatus.FAILED
             run.error = error
             run.finished_at = datetime.now(UTC)
+            snapshot = run.model_copy()
+        await self._persist_run(snapshot)
+
+    async def _persist_run(self, run: Run) -> None:
+        """Write the in-memory run through to the DB. Best-effort; failures
+        are logged but never propagated to callers — the DB is a recovery
+        cache, not the authoritative store mid-execution.
+        """
+        if self._db_session_factory is None:
+            return
+        try:
+            async with self._db_session_factory() as session:
+                row = RunRow(
+                    id=run.id,
+                    meeting_id=run.meeting_id,
+                    user_oid=run.user_oid,
+                    status=run.status.value,
+                    progress=run.progress,
+                    error=run.error,
+                    output_dir=run.output_dir,
+                    created_at=run.created_at,
+                    finished_at=run.finished_at,
+                )
+                await repository.upsert_run(session, run=row)
+                await session.commit()
+        except Exception:
+            log.exception("runner.persist_run.failed", run_id=run.id)
 
     def safe_resolve(self, run_id: str, rel_path: str, user_oid: str) -> Path | None:
         """Resolve a request path under the run's output_dir, blocking traversal

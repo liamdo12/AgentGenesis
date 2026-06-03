@@ -10,6 +10,7 @@ node/edge structure only).
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from agentgenesis_api.auth.models import User
 from agentgenesis_api.config import Settings
 from agentgenesis_api.msgraph import MeetingRef, TranscriptArtifact
 from agentgenesis_api.schemas import MeetingSummary, StoriesOutput
-from agentgenesis_api.services.protocols import PipelineServices
+from agentgenesis_api.services.protocols import ChatChunk, PipelineServices
 from agentgenesis_api.synthesis.schemas import MultimodalContext
 
 _NOOP_SLEEP_SEC = 0.05
@@ -75,6 +76,15 @@ class _NoopFrames:
 
 @dataclass
 class _NoopSynth:
+    async def stream_chat(
+        self,
+        user_message: str,
+        chat_history: list[dict],
+        current_stories: StoriesOutput,
+    ) -> AsyncIterator[ChatChunk]:
+        await asyncio.sleep(_NOOP_SLEEP_SEC)
+        yield ChatChunk(type="text", text="")
+
     async def summarize(
         self, ctx: MultimodalContext, run_dir: Path
     ) -> MeetingSummary:
@@ -101,7 +111,12 @@ class _NoopSynth:
 
 class NoopServices:
     @classmethod
-    def create(cls, settings: Settings | None = None) -> PipelineServices:
+    def create(
+        cls,
+        settings: Settings | None = None,
+        *,
+        db_session_factory=None,
+    ) -> PipelineServices:
         # settings is optional — topology tests construct without one. We
         # synthesize a minimal Settings only if not provided; nothing reads it.
         if settings is None:
@@ -116,4 +131,5 @@ class NoopServices:
             recording=_NoopRecording(),
             frames=_NoopFrames(),
             synth=_NoopSynth(),
+            db_session_factory=db_session_factory,
         )

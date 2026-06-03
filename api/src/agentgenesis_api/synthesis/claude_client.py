@@ -11,8 +11,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 import anthropic
 from anthropic.types import MessageParam
@@ -20,6 +21,9 @@ from pydantic import BaseModel, ValidationError
 
 from agentgenesis_api.config import Settings
 from agentgenesis_api.logging import get_logger
+
+if TYPE_CHECKING:
+    from agentgenesis_api.services.protocols import ChatChunk
 
 log = get_logger("agentgenesis_api.synthesis.claude_client")
 
@@ -79,6 +83,55 @@ class ClaudeClient:
                 )
                 log.warning("claude.repair_retry", error=str(e)[:200])
         raise ClaudeError("unreachable")
+
+    async def stream_chat(
+        self, *, system: str, user_text: str, max_tokens: int = 4096
+    ) -> AsyncIterator[ChatChunk]:
+        """Stream a chat turn from Claude. Yields {type: text} per delta, and
+        {type: stories, stories, removed_ids} when an `ag-stories` fenced
+        JSON block closes. Tolerates fences split across deltas.
+        """
+        from agentgenesis_api.services.chat import LlmStoriesReviseOutput
+
+        accum = ""
+        in_fence = False
+        fence_start: int | None = None
+        async with self._raw.messages.stream(
+            model=self._settings.claude_model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user_text}],
+        ) as stream:
+            async for delta in stream.text_stream:
+                accum += delta
+                # Emit text deltas verbatim — the parser inspects `accum`.
+                yield {"type": "text", "text": delta}
+
+                # Track fence open/close in the accumulated buffer.
+                while True:
+                    if not in_fence:
+                        idx = accum.find("```ag-stories", 0 if fence_start is None else fence_start)
+                        if idx < 0:
+                            break
+                        in_fence = True
+                        fence_start = idx + len("```ag-stories")
+                        continue
+                    end = accum.find("```", fence_start or 0)
+                    if end < 0:
+                        break
+                    payload = accum[fence_start:end].strip()
+                    try:
+                        obj = json.loads(payload)
+                        revised = LlmStoriesReviseOutput.model_validate(obj)
+                        yield {
+                            "type": "stories",
+                            "stories": revised.model_dump(),
+                            "removed_ids": revised.removed_ids,
+                        }
+                    except (json.JSONDecodeError, ValidationError) as e:
+                        log.warning("claude.stream_chat.bad_fence", error=str(e)[:200])
+                    in_fence = False
+                    fence_start = end + 3
 
     async def _call_with_retry(
         self, messages: list[MessageParam], system: str, max_tokens: int

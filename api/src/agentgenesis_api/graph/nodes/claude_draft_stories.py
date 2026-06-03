@@ -13,8 +13,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from agentgenesis_api.db import repository
+from agentgenesis_api.graph.auth_context import current_user
 from agentgenesis_api.graph.deps import NodeDeps
+from agentgenesis_api.logging import get_logger
 from agentgenesis_api.synthesis.schemas import MultimodalContext
+
+_log = get_logger("agentgenesis_api.graph.nodes.claude_draft_stories")
 
 
 class _LlmStory(BaseModel):
@@ -71,6 +76,26 @@ def build(deps: NodeDeps):
         out_dir = deps.settings.data_dir / "runs" / run_id
 
         output = await deps.services.synth.draft_stories(ctx, summary, out_dir)
+
+        # Persist as revision 1 (idempotent under LangGraph replay) so the
+        # chat-edit feature has a baseline to fork from.
+        factory = deps.services.db_session_factory
+        user = current_user.get()
+        if factory is not None and user is not None:
+            try:
+                async with factory() as session:
+                    await repository.add_story_revision_if_absent(
+                        session,
+                        run_id=run_id,
+                        user_oid=user.oid,
+                        content_json=output.model_dump_json(),
+                        source="extraction",
+                        version=1,
+                    )
+                    await session.commit()
+            except Exception:
+                _log.exception("revision_1.persist_failed", run_id=run_id)
+
         return {
             "stories_output": output,
             "phase_label": "Drafting user stories…",

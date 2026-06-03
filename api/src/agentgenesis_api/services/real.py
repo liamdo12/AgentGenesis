@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import shutil
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,7 +32,13 @@ from agentgenesis_api.graph.nodes.claude_draft_stories import (
 from agentgenesis_api.logging import get_logger
 from agentgenesis_api.msgraph import GraphClient, MeetingRef, TranscriptArtifact
 from agentgenesis_api.schemas import MeetingSummary, StoriesOutput, Story
-from agentgenesis_api.services.protocols import PipelineServices
+from agentgenesis_api.services.chat import (
+    CHAT_SYSTEM,
+    LlmStoriesReviseOutput,
+    build_user_text,
+    merge_revise_into_envelope,
+)
+from agentgenesis_api.services.protocols import ChatChunk, PipelineServices
 from agentgenesis_api.synthesis import ClaudeClient, map_reduce
 from agentgenesis_api.synthesis.claude_client import ClaudeError
 from agentgenesis_api.synthesis.prompts import SUMMARY_SYSTEM, build_stories_system
@@ -162,6 +169,29 @@ class _RealSynth:
     claude: ClaudeClient | None
     settings: Settings
 
+    async def stream_chat(
+        self,
+        user_message: str,
+        chat_history: list[dict],
+        current_stories: StoriesOutput,
+    ) -> AsyncIterator[ChatChunk]:
+        if self.claude is None:
+            raise ClaudeError("Claude client not configured")
+        user_text = build_user_text(current_stories, chat_history, user_message)
+        async for chunk in self.claude.stream_chat(
+            system=CHAT_SYSTEM, user_text=user_text
+        ):
+            if chunk.get("type") == "stories":
+                revised = LlmStoriesReviseOutput.model_validate(chunk["stories"])
+                envelope = merge_revise_into_envelope(revised, current_stories)
+                yield ChatChunk(
+                    type="stories",
+                    stories=envelope.model_dump(mode="json"),
+                    removed_ids=list(chunk.get("removed_ids", []) or []),
+                )
+            else:
+                yield chunk
+
     async def summarize(
         self, ctx: MultimodalContext, run_dir: Path
     ) -> MeetingSummary:
@@ -262,6 +292,7 @@ class RealServices:
         graph: GraphClient | None = None,
         broker: TokenBroker | None = None,
         claude: ClaudeClient | None = None,
+        db_session_factory=None,
     ) -> PipelineServices:
         return PipelineServices(
             settings=settings,
@@ -269,4 +300,5 @@ class RealServices:
             recording=_RealRecording(graph, broker, settings),
             frames=_RealFrames(),
             synth=_RealSynth(claude, settings),
+            db_session_factory=db_session_factory,
         )
