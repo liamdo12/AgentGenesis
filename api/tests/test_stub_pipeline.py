@@ -93,7 +93,7 @@ def test_stub_extract_frames_branches_on_ffmpeg(tmp_path: Path, monkeypatch) -> 
     # Scope the patch tightly so other `which` lookups behave normally.
     real_which = shutil.which
     monkeypatch.setattr(
-        "agentgenesis_api.graph.nodes.extract_frames.shutil.which",
+        "agentgenesis_api.services.stub.shutil.which",
         lambda name: None if name == "ffmpeg" else real_which(name),
     )
     # Also patch the main module's `shutil.which` so the lifespan check sees

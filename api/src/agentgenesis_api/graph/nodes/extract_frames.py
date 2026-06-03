@@ -1,23 +1,16 @@
-"""Graph node: chunked parallel ffmpeg frame extraction.
+"""Graph node: delegate frame extraction to the services facade.
 
-Probes the recording duration, plans N chunks, runs M ≤ cpu_count parallel
-ffmpegs, then writes manifest.json. Failed chunks are logged in the manifest
-but don't abort siblings.
+`FrameExtractor.extract` writes manifest.json and returns the manifest dict.
+Real provider runs ffmpeg; stub provider falls back to a canned manifest when
+ffmpeg or the fixture mp4 is missing.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import os
-import shutil
 from pathlib import Path
 from typing import Any
 
 from agentgenesis_api.graph.deps import NodeDeps
-from agentgenesis_api.graph.nodes._shared import ffprobe, frames_manifest
-from agentgenesis_api.graph.nodes._shared.chunker import plan_chunks
-from agentgenesis_api.graph.nodes._shared.extractor import ChunkResult, extract_chunk
 from agentgenesis_api.logging import get_logger
 
 log = get_logger("agentgenesis_api.graph.nodes.extract_frames")
@@ -29,102 +22,30 @@ def build(deps: NodeDeps):
             return {"phase_label": "Extracting frames…", "progress": 0.75}
 
         src = Path(state["recording_path"])
-        # Stub-mode fallback: when ffmpeg is missing OR the fixture mp4 wasn't
-        # supplied, skip the real path and emit a canned, syntactically-valid
-        # manifest so merge_context and /runs/{id}/files/manifest.json keep working.
-        if deps.stub_mode and (shutil.which("ffmpeg") is None or not src.is_file()):
-            run_id = state["run_id"]
-            out_dir = deps.settings.data_dir / "runs" / run_id
-            out_dir.mkdir(parents=True, exist_ok=True)
-            canned = {
-                "video": {
-                    "duration_sec": 30.0,
-                    "frame_interval_sec": deps.settings.frame_interval_sec,
-                    "chunk_window_sec": deps.settings.chunk_window_sec,
-                },
-                "chunks": [],
-                "frames": [],
-                "useful_frame_count": 0,
-            }
-            (out_dir / "manifest.json").write_text(json.dumps(canned, indent=2))
-            reason = "ffmpeg unavailable" if shutil.which("ffmpeg") is None else "fixture mp4 missing"
-            log.warning("extract_frames.stub.using_canned_manifest", run_id=run_id, reason=reason)
-            return {
-                "frames_manifest": canned,
-                "warnings": [f"{reason} in stub mode; canned frames manifest used"],
-                "phase_label": "Extracting frames…",
-                "progress": 0.75,
-            }
-
-        if not src.is_file():
-            raise RuntimeError(f"recording not found at {src}")
-        duration = await ffprobe.get_duration(src)
-        chunks = plan_chunks(duration, deps.settings.chunk_window_sec)
-        if not chunks:
-            raise RuntimeError(f"video has non-positive duration: {duration}")
-
         run_id = state["run_id"]
-        out_dir = deps.settings.data_dir / "runs" / run_id
-        frames_root = out_dir / "frames"
-        frames_root.mkdir(parents=True, exist_ok=True)
+        run_dir = deps.settings.data_dir / "runs" / run_id
 
-        sem = asyncio.Semaphore(min(os.cpu_count() or 1, deps.settings.max_parallel_ffmpeg))
+        manifest = await deps.services.frames.extract(src, run_dir, deps.settings)
 
-        async def run_one(c) -> ChunkResult:
-            async with sem:
-                return await extract_chunk(
-                    c, src, frames_root, deps.settings.frame_interval_sec
-                )
-
-        raw_results = await asyncio.gather(*(run_one(c) for c in chunks), return_exceptions=True)
-        results: list[ChunkResult] = []
-        for c, r in zip(chunks, raw_results, strict=True):
-            if isinstance(r, ChunkResult):
-                results.append(r)
-            else:
-                results.append(
-                    ChunkResult(
-                        idx=c.idx,
-                        start=c.start,
-                        end=c.end,
-                        frame_count=0,
-                        status="error",
-                        error=f"{type(r).__name__}: {r}",
-                    )
-                )
-
-        manifest = frames_manifest.build(
-            out_dir=out_dir,
-            chunks_results=results,
-            frame_interval_sec=deps.settings.frame_interval_sec,
-            chunk_window_sec=deps.settings.chunk_window_sec,
-            duration_sec=duration,
-        )
-        useful = manifest["useful_frame_count"]
-        all_failed = all(r.status == "error" for r in results)
-        if useful == 0 and all_failed:
-            raise RuntimeError(
-                "All ffmpeg chunks failed; no frames extracted. "
-                f"First error: {results[0].error if results else 'no chunks'}"
-            )
-
-        warnings: list[str] = []
+        useful = manifest.get("useful_frame_count", 0)
+        # Provider-attached warnings (e.g. stub canned-manifest reason) — pop so
+        # they don't leak into manifest.json consumers.
+        warnings: list[str] = list(manifest.pop("_warnings", []))
         frame_evidence_used = useful >= deps.settings.min_useful_frames
         if not frame_evidence_used:
             warnings.append(f"low_visual_signal: only {useful} frames extracted")
-
         log.info(
             "extract_frames.done",
             run_id=run_id,
-            chunks=len(chunks),
+            chunks=len(manifest.get("chunks", [])),
             useful_frame_count=useful,
             frame_evidence_used=frame_evidence_used,
         )
         return {
             "frames_manifest": manifest,
+            "warnings": warnings,
             "phase_label": "Extracting frames…",
             "progress": 0.75,
-            "warnings": warnings,
         }
 
     extract_frames.__name__ = "extract_frames"

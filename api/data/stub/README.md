@@ -31,3 +31,13 @@ If both URLs are dead, drop in any short mp4 you have — the stub pipeline only
 ## VTT format
 
 Hand-write your own if you want different topics in the canned summary. See `sample.example.vtt` for a minimal 6-cue example using the same dashboard + export themes the canned synthesis output references.
+
+## Unplugging stub mode
+
+When you no longer want stub support compiled into the API:
+
+1. Delete `api/src/agentgenesis_api/services/stub.py`.
+2. In `api/src/agentgenesis_api/main.py:_lifespan`, drop the `if settings.use_stub_nodes:` branch — always call `RealServices.create(...)`.
+3. Optionally remove the `use_stub_nodes` field from `Settings`.
+
+No graph node, builder, or runner code is touched — the stub provider was the only file with stub-specific logic.

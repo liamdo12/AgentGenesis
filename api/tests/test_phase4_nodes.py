@@ -23,6 +23,7 @@ from agentgenesis_api.msgraph import (
     TranscriptArtifact,
     TranscriptNotReady,
 )
+from agentgenesis_api.services import RealServices
 
 
 class _FakeGraph:
@@ -57,7 +58,9 @@ def _deps(tmp_path: Path) -> tuple[NodeDeps, _FakeGraph]:
         data_dir=tmp_path,
     )
     graph = _FakeGraph()
-    deps = NodeDeps(settings=settings, graph=graph, broker=_FakeBroker(), claude=None)  # type: ignore[arg-type]
+    broker = _FakeBroker()
+    services = RealServices.create(settings, graph=graph, broker=broker)  # type: ignore[arg-type]
+    deps = NodeDeps(settings=settings, services=services)
     return deps, graph
 
 
@@ -164,9 +167,9 @@ async def test_fetch_recording_streams_with_bearer(tmp_path: Path, monkeypatch) 
             captured_headers.update(headers or {})
             return _FakeStream()
 
-    import agentgenesis_api.graph.nodes.fetch_recording as fr_mod
+    import agentgenesis_api.services.real as svc_real_mod
 
-    monkeypatch.setattr(fr_mod.httpx, "AsyncClient", _FakeClient)
+    monkeypatch.setattr(svc_real_mod.httpx, "AsyncClient", _FakeClient)
 
     node = fetch_recording.build(deps)
     result = await node({"run_id": "run-abc", "meeting_id": "m1"})

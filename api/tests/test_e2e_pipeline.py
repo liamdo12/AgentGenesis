@@ -17,6 +17,7 @@ import pytest
 from pydantic import HttpUrl
 
 from agentgenesis_api.config import Settings
+from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.graph.runner import GraphRunner
 from agentgenesis_api.msgraph import (
     MeetingRef,
@@ -24,6 +25,7 @@ from agentgenesis_api.msgraph import (
     TranscriptArtifact,
 )
 from agentgenesis_api.schemas import MeetingSummary, RunStatus
+from agentgenesis_api.services import RealServices
 from agentgenesis_api.synthesis.schemas import (
     MultimodalContext,  # noqa: F401 — keeps import side-effect chain stable
 )
@@ -130,8 +132,8 @@ class _FakeClaude:
 
 @pytest.fixture
 def fake_httpx(monkeypatch):
-    """Patch httpx.AsyncClient used by fetch_recording to serve the local fixture mp4."""
-    import agentgenesis_api.graph.nodes.fetch_recording as fr_mod
+    """Patch httpx.AsyncClient used by RealServices.recording to serve the local fixture mp4."""
+    import agentgenesis_api.services.real as svc_real_mod
 
     body = FIXTURE_MP4.read_bytes()
 
@@ -161,7 +163,7 @@ def fake_httpx(monkeypatch):
         def stream(self, method: str, url: str, headers: dict | None = None) -> _Stream:
             return _Stream()
 
-    monkeypatch.setattr(fr_mod.httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(svc_real_mod.httpx, "AsyncClient", _Client)
 
 
 async def test_extraction_pipeline_end_to_end(tmp_path: Path, fake_httpx) -> None:
@@ -178,11 +180,11 @@ async def test_extraction_pipeline_end_to_end(tmp_path: Path, fake_httpx) -> Non
     fake_mcp = _FakeMCP(FIXTURE_MP4.read_bytes())
     fake_claude = _FakeClaude()
 
-    # Phase 4 renamed `mcp` → `graph`; the fake's interface matches GraphClient
-    # (list_meeting_recordings, get_transcript, get_recording — now taking a `user`).
-    runner = GraphRunner(
-        settings, graph=fake_mcp, broker=_FakeBroker(), claude=fake_claude
-    )  # type: ignore[arg-type]
+    services = RealServices.create(
+        settings, graph=fake_mcp, broker=_FakeBroker(), claude=fake_claude,  # type: ignore[arg-type]
+    )
+    deps = NodeDeps(settings=settings, services=services)
+    runner = GraphRunner(settings, deps=deps)
     await runner.startup()
     try:
         from agentgenesis_api.auth.models import STUB_USER

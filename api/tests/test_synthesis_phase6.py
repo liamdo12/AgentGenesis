@@ -18,6 +18,7 @@ from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.graph.nodes import claude_draft_stories, claude_summary, merge_context
 from agentgenesis_api.msgraph import MeetingRef
 from agentgenesis_api.schemas import MeetingSummary
+from agentgenesis_api.services import RealServices
 from agentgenesis_api.synthesis.frame_selection import pick_evenly
 from agentgenesis_api.synthesis.token_counter import (
     estimate_text_tokens,
@@ -53,7 +54,9 @@ def _settings(tmp_path: Path) -> Settings:
 
 def _deps(tmp_path: Path) -> tuple[NodeDeps, _FakeClaude]:
     fake = _FakeClaude()
-    return NodeDeps(settings=_settings(tmp_path), graph=None, claude=fake), fake  # type: ignore[arg-type]
+    settings = _settings(tmp_path)
+    services = RealServices.create(settings, claude=fake)  # type: ignore[arg-type]
+    return NodeDeps(settings=settings, services=services), fake
 
 
 # ──────────────── frame selection ────────────────
@@ -211,7 +214,9 @@ async def test_claude_draft_stories_assigns_ids_and_writes(tmp_path: Path) -> No
 
 
 async def test_claude_summary_raises_without_client(tmp_path: Path) -> None:
-    deps = NodeDeps(settings=_settings(tmp_path), graph=None, claude=None)  # type: ignore[arg-type]
+    settings = _settings(tmp_path)
+    services = RealServices.create(settings)  # claude=None
+    deps = NodeDeps(settings=settings, services=services)
     node = claude_summary.build(deps)
     with pytest.raises(Exception, match="not configured"):
         await node({"run_id": "r", "multimodal_context": {

@@ -12,6 +12,7 @@ from agentgenesis_api.graph.nodes import extract_frames
 from agentgenesis_api.graph.nodes._shared.chunker import Chunk, plan_chunks
 from agentgenesis_api.graph.nodes._shared.extractor import extract_chunk
 from agentgenesis_api.graph.nodes._shared.frames_manifest import build as build_manifest
+from agentgenesis_api.services import RealServices
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample-5s.mp4"
 
@@ -26,7 +27,8 @@ def _deps(tmp_path: Path, *, interval: int = 1, window: int = 2) -> NodeDeps:
         min_useful_frames=1,
         max_parallel_ffmpeg=2,
     )
-    return NodeDeps(settings=settings, graph=None)  # type: ignore[arg-type]
+    services = RealServices.create(settings)
+    return NodeDeps(settings=settings, services=services)
 
 
 async def test_extract_chunk_produces_frames(tmp_path: Path) -> None:

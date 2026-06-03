@@ -1,4 +1,4 @@
-"""Graph node: load the MeetingRef for the run's meeting_id."""
+"""Graph node: resolve the MeetingRef for the run's meeting_id via services facade."""
 
 from __future__ import annotations
 
@@ -14,15 +14,10 @@ def build(deps: NodeDeps):
         if state.get("meeting_ref") is not None:
             return {"phase_label": "Resolving meeting…", "progress": 0.05}
         meeting_id = state["meeting_id"]
-        user = current_user.get() or STUB_USER  # ContextVar set by GraphRunner._execute
-        if deps.graph is None:
-            raise RuntimeError("graph client not configured (stub mode without user?)")
-        refs = await deps.graph.list_meeting_recordings(user, limit=200)
-        match = next((r for r in refs if r.id == meeting_id), None)
-        if match is None:
-            raise RuntimeError(f"Meeting {meeting_id!r} not found")
+        user = current_user.get() or STUB_USER
+        ref = await deps.services.meetings.get_meeting_ref(user, meeting_id)
         return {
-            "meeting_ref": match,
+            "meeting_ref": ref,
             "phase_label": "Resolving meeting…",
             "progress": 0.05,
         }

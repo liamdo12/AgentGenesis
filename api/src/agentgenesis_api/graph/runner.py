@@ -23,16 +23,13 @@ from uuid import uuid4
 from langgraph.graph.state import CompiledStateGraph
 
 from agentgenesis_api.auth.models import User
-from agentgenesis_api.auth.token_broker import TokenBroker
 from agentgenesis_api.config import Settings
 from agentgenesis_api.graph.auth_context import current_user
 from agentgenesis_api.graph.builder import build_graph
 from agentgenesis_api.graph.checkpointer import build_checkpointer
 from agentgenesis_api.graph.deps import NodeDeps
 from agentgenesis_api.logging import get_logger
-from agentgenesis_api.msgraph import GraphClient
 from agentgenesis_api.schemas import Run, RunStatus
-from agentgenesis_api.synthesis import ClaudeClient
 
 log = get_logger("agentgenesis_api.graph.runner")
 
@@ -42,49 +39,24 @@ class RunStoreFull(Exception):
 
 
 class GraphRunner:
-    def __init__(
-        self,
-        settings: Settings,
-        graph: GraphClient | None = None,
-        broker: TokenBroker | None = None,
-        claude: ClaudeClient | None = None,
-    ):
+    def __init__(self, settings: Settings, *, deps: NodeDeps | None = None):
         self._settings = settings
-        self._graph_client = graph
-        self._broker = broker
-        self._claude = claude
+        self._deps = deps
         self._sem = asyncio.Semaphore(settings.max_concurrent_runs)
         self._runs: OrderedDict[str, Run] = OrderedDict()
         self._tasks: dict[str, asyncio.Task] = {}
         self._stack: AsyncExitStack | None = None
         self._graph: CompiledStateGraph | None = None
         self._lock = asyncio.Lock()
-        # Stub mode opt-in: the lifespan sets this to a pre-built NodeDeps so
-        # `startup()` doesn't have to re-derive it from a None graph client.
-        # Private attribute — kept off __init__ to preserve the public signature
-        # the existing tests assert against.
-        self._stub_deps: NodeDeps | None = None
 
     async def startup(self) -> None:
         self._stack = AsyncExitStack()
         checkpointer = await self._stack.enter_async_context(build_checkpointer(self._settings))
-        if self._stub_deps is not None:
-            deps: NodeDeps | None = self._stub_deps
-        elif self._graph_client is not None:
-            deps = NodeDeps(
-                settings=self._settings,
-                graph=self._graph_client,
-                broker=self._broker,
-                claude=self._claude,
-            )
-        else:
-            deps = None
-        self._graph = build_graph(checkpointer, deps=deps)
+        self._graph = build_graph(checkpointer, deps=self._deps)
         log.info(
             "graph.startup",
             data_dir=str(self._settings.data_dir),
-            wired=deps is not None,
-            stub_mode=deps.stub_mode if deps is not None else False,
+            wired=self._deps is not None,
         )
 
     async def shutdown(self) -> None:
@@ -189,7 +161,6 @@ class GraphRunner:
                 return
             if "progress" in state:
                 run.progress = float(state["progress"])
-            # phase_label maps to a RunStatus where we have one.
             label = state.get("phase_label", "")
             run.status = _label_to_status(label, current=run.status)
             if state.get("pending_reason") == "transcript_not_ready":
