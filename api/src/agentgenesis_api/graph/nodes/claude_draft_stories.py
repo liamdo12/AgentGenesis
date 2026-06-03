@@ -16,6 +16,9 @@ from pydantic import BaseModel, Field
 from agentgenesis_api.db import repository
 from agentgenesis_api.graph.auth_context import current_user
 from agentgenesis_api.graph.deps import NodeDeps
+from agentgenesis_api.graph.nodes.merge_context import (
+    resolve_or_rebuild_multimodal_context,
+)
 from agentgenesis_api.logging import get_logger
 from agentgenesis_api.synthesis.schemas import MultimodalContext
 
@@ -70,7 +73,16 @@ def build(deps: NodeDeps):
         if state.get("stories_output") is not None:
             return {"phase_label": "Drafting user stories…", "progress": 1.0}
 
-        ctx = MultimodalContext.model_validate(state["multimodal_context"])
+        # Same recovery path as claude_summary: tolerate stale-checkpoint
+        # state where the LangGraph parallel-branch slice was dropped.
+        ctx, rebuilt = resolve_or_rebuild_multimodal_context(
+            state, deps.settings, node_name="claude_draft_stories"
+        )
+        if "summary" not in state:
+            raise RuntimeError(
+                "claude_draft_stories: state missing 'summary' — claude_summary "
+                f"did not run. present state keys: {sorted(state.keys())}"
+            )
         summary = state["summary"]
         run_id = state["run_id"]
         out_dir = deps.settings.data_dir / "runs" / run_id
@@ -96,11 +108,14 @@ def build(deps: NodeDeps):
             except Exception:
                 _log.exception("revision_1.persist_failed", run_id=run_id)
 
-        return {
+        result: dict[str, Any] = {
             "stories_output": output,
             "phase_label": "Drafting user stories…",
             "progress": 1.0,
         }
+        if rebuilt:
+            result["multimodal_context"] = ctx.model_dump()
+        return result
 
     claude_draft_stories.__name__ = "claude_draft_stories"
     return claude_draft_stories

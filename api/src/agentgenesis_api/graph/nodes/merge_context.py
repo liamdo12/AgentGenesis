@@ -49,6 +49,44 @@ def build_multimodal_context_from_state(
     )
 
 
+def resolve_or_rebuild_multimodal_context(
+    state: dict[str, Any], settings: Settings, *, node_name: str
+) -> tuple[MultimodalContext, bool]:
+    """Read multimodal_context from state; rebuild if missing.
+
+    Returns (ctx, was_rebuilt). Callers should propagate the rebuilt
+    slice back into state so downstream nodes don't repeat the work.
+    Raises RuntimeError with state shape if rebuild is impossible
+    (meeting_ref also missing).
+    """
+    raw = state.get("multimodal_context")
+    if raw is not None:
+        return MultimodalContext.model_validate(raw), False
+
+    if "meeting_ref" not in state:
+        log.error(
+            f"{node_name}.unrecoverable_missing_meeting_ref_and_multimodal",
+            run_id=state.get("run_id"),
+            state_keys=sorted(state.keys()),
+            pending_reason=state.get("pending_reason"),
+        )
+        raise RuntimeError(
+            f"{node_name}: state is missing 'multimodal_context' AND "
+            "'meeting_ref'. Cannot recover. "
+            f"present state keys: {sorted(state.keys())}"
+        )
+
+    log.warning(
+        f"{node_name}.rebuilding_multimodal_context",
+        run_id=state.get("run_id"),
+        state_keys=sorted(state.keys()),
+        has_transcript_segments="transcript_segments" in state,
+        has_frames_manifest="frames_manifest" in state,
+        pending_reason=state.get("pending_reason"),
+    )
+    return build_multimodal_context_from_state(state, settings), True
+
+
 def build(deps: NodeDeps):
     async def merge_context(state: dict[str, Any]) -> dict[str, Any]:
         if state.get("multimodal_context") is not None:

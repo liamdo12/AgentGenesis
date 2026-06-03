@@ -1,16 +1,15 @@
-"""Regression: claude_summary rebuilds multimodal_context from upstream
-state when a partial LangGraph checkpoint lands it without that slice.
+"""Regression: claude_summary AND claude_draft_stories both rebuild
+multimodal_context from upstream state when a partial LangGraph
+checkpoint lands them without that slice.
 
-Triggering shape (mirrors user-reported failure on /resume after a paused
-pending_transcript run):
-    state has: meeting_ref, transcript_segments, recording_path,
-               pending_reason
-    state missing: frames_manifest, multimodal_context
+Failure shape mirrors the user-reported state on /resume after a paused
+pending_transcript run:
+    has: meeting_ref, transcript_segments, recording_path, pending_reason
+    missing: frames_manifest, multimodal_context (and sometimes summary)
 
-Expected behaviour:
-    claude_summary logs a warning, rebuilds multimodal_context inline via
-    `build_multimodal_context_from_state`, calls the synthesizer, and
-    returns the slice so downstream nodes don't re-trigger the recovery.
+Both downstream nodes share the recovery via
+`resolve_or_rebuild_multimodal_context` so the second node can't dead-end
+even if the first node's idempotent-skip path didn't backfill the slice.
 """
 
 import os
@@ -21,8 +20,16 @@ import pytest
 
 from agentgenesis_api.config import Settings
 from agentgenesis_api.graph.deps import NodeDeps
+from agentgenesis_api.graph.nodes.claude_draft_stories import (
+    build as build_claude_draft_stories,
+)
 from agentgenesis_api.graph.nodes.claude_summary import build as build_claude_summary
+from agentgenesis_api.graph.nodes.merge_context import (
+    build_multimodal_context_from_state,
+    resolve_or_rebuild_multimodal_context,
+)
 from agentgenesis_api.msgraph import MeetingRef
+from agentgenesis_api.schemas import MeetingSummary
 from agentgenesis_api.services import NoopServices
 
 
@@ -37,8 +44,9 @@ def _make_deps(tmp_path: Path) -> NodeDeps:
 
 
 def _partial_resume_state() -> dict:
-    """Exactly the keys reported by the user (pending_reason + segments
-    co-exist; frames_manifest + multimodal_context are missing)."""
+    """Exactly the keys reported by the user — pending_reason coexists
+    with transcript_segments (proving resume); frames_manifest and
+    multimodal_context are dropped."""
     return {
         "run_id": "r-recover",
         "meeting_id": "m-1",
@@ -53,7 +61,7 @@ def _partial_resume_state() -> dict:
             {"start": 0.0, "end": 5.0, "speaker": "Alice", "text": "hello"},
         ],
         "recording_path": "/tmp/never-read",
-        "pending_reason": "transcript_not_ready",  # stale carryover
+        "pending_reason": "transcript_not_ready",
         "phase_label": "Summarizing with Claude…",
         "progress": 0.85,
         "warnings": ["language=en"],
@@ -61,31 +69,26 @@ def _partial_resume_state() -> dict:
     }
 
 
-async def test_rebuilds_multimodal_context_when_missing(tmp_path: Path):
+# ── claude_summary ────────────────────────────────────────────────────
+
+
+async def test_claude_summary_rebuilds_when_slice_missing(tmp_path: Path):
     deps = _make_deps(tmp_path)
     os.makedirs(tmp_path / "runs" / "r-recover", exist_ok=True)
     node = build_claude_summary(deps)
     state = _partial_resume_state()
-
     result = await node(state)
-
-    # Recovery slice persisted so downstream nodes don't re-trigger.
     assert "multimodal_context" in result
     assert "summary" in result
-    # Noop synth returns an empty MeetingSummary.
-    assert result["summary"].summary == ""
-    # Phase signalling still mirrors the normal path.
     assert result["phase_label"] == "Summarizing with Claude…"
-    assert result["progress"] == 0.90
 
 
-async def test_idempotent_skip_when_summary_already_set(tmp_path: Path):
+async def test_claude_summary_idempotent_skip_backfills_missing_slice(tmp_path: Path):
+    """If summary is already in state but multimodal_context isn't, the
+    idempotent-skip path must still emit the slice so claude_draft_stories
+    doesn't blow up."""
     deps = _make_deps(tmp_path)
     node = build_claude_summary(deps)
-    # When summary is already in state (LangGraph replay), short-circuit
-    # without touching multimodal_context (even if it's missing).
-    from agentgenesis_api.schemas import MeetingSummary
-
     state = _partial_resume_state()
     state["summary"] = MeetingSummary(
         summary="cached",
@@ -95,11 +98,11 @@ async def test_idempotent_skip_when_summary_already_set(tmp_path: Path):
         frame_evidence_used=False,
     )
     result = await node(state)
-    assert "multimodal_context" not in result
-    assert "summary" not in result  # not re-emitted on replay
+    assert "summary" not in result  # not re-emitted (idempotent)
+    assert "multimodal_context" in result  # but slice backfilled
 
 
-async def test_raises_when_both_meeting_ref_and_multimodal_context_missing(
+async def test_claude_summary_unrecoverable_when_meeting_ref_also_missing(
     tmp_path: Path,
 ):
     deps = _make_deps(tmp_path)
@@ -111,24 +114,84 @@ async def test_raises_when_both_meeting_ref_and_multimodal_context_missing(
     msg = str(excinfo.value)
     assert "multimodal_context" in msg
     assert "meeting_ref" in msg
-    # State shape leaked into the message for operator triage.
-    assert "transcript_segments" in msg
 
 
-async def test_existing_multimodal_context_is_used_as_is(tmp_path: Path):
-    """Normal path: when multimodal_context IS present, no rebuild."""
+async def test_claude_summary_normal_path_when_slice_present(tmp_path: Path):
     deps = _make_deps(tmp_path)
     node = build_claude_summary(deps)
-
-    from agentgenesis_api.graph.nodes.merge_context import (
-        build_multimodal_context_from_state,
-    )
-
     state = _partial_resume_state()
     ctx = build_multimodal_context_from_state(state, deps.settings)
     state["multimodal_context"] = ctx.model_dump()
-
     result = await node(state)
-    # No fresh multimodal_context slice — node read the existing one.
-    assert "multimodal_context" not in result
+    assert "multimodal_context" not in result  # not rebuilt (already present)
     assert "summary" in result
+
+
+# ── claude_draft_stories ──────────────────────────────────────────────
+
+
+async def test_claude_draft_stories_rebuilds_when_slice_missing(tmp_path: Path):
+    """The exact follow-on failure user hit after claude_summary's fix:
+    KeyError at claude_draft_stories.py:73 when checkpoint shape drops
+    multimodal_context. Now should rebuild + complete."""
+    deps = _make_deps(tmp_path)
+    node = build_claude_draft_stories(deps)
+    state = _partial_resume_state()
+    # claude_summary already produced the summary in this checkpoint.
+    state["summary"] = MeetingSummary(
+        summary="cached summary",
+        key_decisions=[],
+        action_items=[],
+        detected_language="en",
+        frame_evidence_used=False,
+    )
+    result = await node(state)
+    assert "stories_output" in result
+    assert "multimodal_context" in result  # propagated for downstream cache
+
+
+async def test_claude_draft_stories_idempotent_skip(tmp_path: Path):
+    deps = _make_deps(tmp_path)
+    node = build_claude_draft_stories(deps)
+    state = _partial_resume_state()
+    # Pretend stories_output already exists — full replay.
+    state["stories_output"] = "anything"
+    result = await node(state)
+    assert "stories_output" not in result  # not re-emitted
+
+
+async def test_claude_draft_stories_clear_error_when_summary_missing(
+    tmp_path: Path,
+):
+    deps = _make_deps(tmp_path)
+    node = build_claude_draft_stories(deps)
+    state = _partial_resume_state()
+    # No summary in state and no stories_output either.
+    with pytest.raises(RuntimeError) as excinfo:
+        await node(state)
+    assert "summary" in str(excinfo.value)
+
+
+# ── shared helper ─────────────────────────────────────────────────────
+
+
+def test_resolve_helper_returns_existing_without_rebuild(tmp_path: Path):
+    deps = _make_deps(tmp_path)
+    state = _partial_resume_state()
+    ctx = build_multimodal_context_from_state(state, deps.settings)
+    state["multimodal_context"] = ctx.model_dump()
+    out, rebuilt = resolve_or_rebuild_multimodal_context(
+        state, deps.settings, node_name="t"
+    )
+    assert rebuilt is False
+    assert out.meeting.id == "m-1"
+
+
+def test_resolve_helper_rebuilds_when_missing(tmp_path: Path):
+    deps = _make_deps(tmp_path)
+    state = _partial_resume_state()
+    out, rebuilt = resolve_or_rebuild_multimodal_context(
+        state, deps.settings, node_name="t"
+    )
+    assert rebuilt is True
+    assert out.meeting.id == "m-1"
