@@ -32,8 +32,12 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
   const token = await acquireToken();
   const headers = new Headers(opts.headers);
   headers.set('Authorization', `Bearer ${token}`);
+  // Thread the caller's AbortSignal through every retry hop so the chat
+  // stream's `cancel()` actually unwinds the token-refresh and claims-
+  // challenge paths instead of stranding the fetch.
+  const signal = opts.signal;
 
-  let res = await fetch(url, { ...opts, headers });
+  let res = await fetch(url, { ...opts, headers, signal });
   if (res.status !== 401) return res;
 
   // First 401 — try a forced silent refresh.
@@ -42,7 +46,7 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
   const body = opts.body;
   const fresh = await acquireToken({ forceRefresh: true });
   headers.set('Authorization', `Bearer ${fresh}`);
-  res = await fetch(url, { ...opts, body, headers });
+  res = await fetch(url, { ...opts, body, headers, signal });
   if (res.status !== 401) return res;
 
   // Second 401 — check for a claims challenge.
@@ -55,7 +59,7 @@ export async function apiFetch(path: string, opts: RequestInit = {}): Promise<Re
   if (parsed?.detail === 'consent_required' && parsed.claims) {
     const challenged = await acquireToken({ claims: parsed.claims });
     headers.set('Authorization', `Bearer ${challenged}`);
-    return fetch(url, { ...opts, body, headers });
+    return fetch(url, { ...opts, body, headers, signal });
   }
 
   // True session expiry — redirect to login.

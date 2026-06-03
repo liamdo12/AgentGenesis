@@ -6,58 +6,112 @@ import {
   AgQuickBar,
 } from '@ds/components/ag-ai-panel';
 import { Icon } from '@ds/lib/icons';
-import { useAppDispatch, useAppState } from '../state/app-state-context';
-import type { Message } from '@ds/lib/seed-data';
+import { useChat } from '../hooks/use-chat';
+import { BulkDeletePreviewModal } from '../modals/bulk-delete-preview-modal';
+import { useAppState } from '../state/app-state-context';
+import type { Story } from '../lib/story-types';
 
-export function AiSidePanel() {
-  const { stories, messages, composer, aiThinking, phase } = useAppState();
-  const dispatch = useAppDispatch();
+type Props = {
+  onRevision?: (stories: Story[]) => void;
+};
+
+export function AiSidePanel({ onRevision }: Props = {}) {
+  const { stories, activeRunId, selectedMeetingId } = useAppState();
+  const chat = useChat(activeRunId, onRevision);
 
   if (stories.length === 0) {
     return <EmptyAiBody />;
   }
 
-  const sendMessage = (txt: string) => {
-    dispatch({
-      type: 'SEND_USER_MESSAGE',
-      payload: { from: 'user', body: <p>{txt}</p>, time: 'now' },
-    });
-    dispatch({ type: 'AI_THINKING', payload: true });
-    setTimeout(() => dispatch({ type: 'AI_REPLY', payload: aiReply(txt) }), 850);
-  };
-
-  const extractionMessages: Message[] =
-    phase === 'extracting'
-      ? [
-          { from: 'ai', typing: true },
-          {
-            from: 'ai',
-            body: (
-              <p>
-                Working through <em>Sprint Planning · Aug 22</em> — extracted{' '}
-                <strong>2 of ~5</strong> candidates so far.
-              </p>
-            ),
-          },
-        ]
-      : [];
+  const meetingLabel = selectedMeetingId ?? 'Active meeting';
 
   return (
     <div className="ag-ai-col">
       <AgAIHeader />
-      <AgContextStrip meeting="Sprint Planning · Aug 22" count={stories.length} />
+      <AgContextStrip meeting={meetingLabel} count={stories.length} />
+      {chat.error && (
+        <div style={{ padding: '6px 12px', color: 'var(--ag-danger)', fontSize: 12 }}>
+          {chat.error}
+          {' · '}
+          <button
+            type="button"
+            onClick={chat.clearHistory}
+            style={{ background: 'none', border: 'none', color: 'inherit', textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            Clear history
+          </button>
+        </div>
+      )}
       <div className="ag-ai-messages">
-        {messages.map((m, i) => <AgMessage key={i} {...m} />)}
-        {extractionMessages.map((m, i) => <AgMessage key={`x${i}`} {...m} />)}
-        {aiThinking && phase !== 'extracting' && <AgMessage from="ai" typing />}
+        {chat.messages.map((m) => (
+          <AgMessage
+            key={m.id}
+            from={m.role === 'user' ? 'user' : 'ai'}
+            body={
+              <div>
+                {m.status === 'error' ? (
+                  <p style={{ color: 'var(--ag-danger)' }}>
+                    {m.content || 'Claude was interrupted.'} ({m.errorDetail ?? 'error'})
+                  </p>
+                ) : (
+                  <p style={{ whiteSpace: 'pre-wrap' }}>{m.content}</p>
+                )}
+                {m.revisionVersion != null && m.role === 'assistant' && (
+                  <RestoreLink
+                    version={m.revisionVersion - 1}
+                    onRestore={chat.restore}
+                  />
+                )}
+              </div>
+            }
+          />
+        ))}
+        {chat.streaming && <AgMessage from="ai" typing />}
       </div>
-      <AgQuickBar onPick={sendMessage} />
-      <AgComposer
-        value={composer}
-        onChange={(v) => dispatch({ type: 'SET_COMPOSER', payload: v })}
-        onSend={sendMessage}
-      />
+      <AgQuickBar onPick={chat.send} />
+      <AgComposer onSend={chat.send} />
+      {chat.streaming && (
+        <div style={{ padding: '4px 12px', textAlign: 'right' }}>
+          <button
+            type="button"
+            className="ag-btn"
+            data-variant="ghost"
+            onClick={chat.cancel}
+            title="Stop generation"
+          >
+            Stop
+          </button>
+        </div>
+      )}
+      {chat.preview && (
+        <BulkDeletePreviewModal
+          preview={chat.preview}
+          onAccept={() => chat.acceptPreview(chat.preview!.previewId)}
+          onReject={chat.rejectPreview}
+        />
+      )}
     </div>
+  );
+}
+
+function RestoreLink({ version, onRestore }: { version: number; onRestore: (v: number) => void }) {
+  if (version < 1) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onRestore(version)}
+      style={{
+        marginTop: 6,
+        background: 'none',
+        border: 'none',
+        color: 'var(--ag-ai)',
+        textDecoration: 'underline',
+        cursor: 'pointer',
+        fontSize: 12,
+      }}
+    >
+      Undo to revision {version}
+    </button>
   );
 }
 
@@ -104,40 +158,4 @@ function EmptyAiBody() {
       </div>
     </div>
   );
-}
-
-function aiReply(txt: string): Message {
-  if (/approve all/i.test(txt)) {
-    return {
-      from: 'ai',
-      body: <p>Approved all stories. Push to DevOps when ready.</p>,
-      time: 'now',
-    };
-  }
-  if (/priorit/i.test(txt)) {
-    return {
-      from: 'ai',
-      body: (
-        <p>
-          Bumped <strong>AG-025</strong> and <strong>AG-026</strong> to <em>high</em>.
-        </p>
-      ),
-      time: 'now',
-    };
-  }
-  if (/split/i.test(txt)) {
-    return {
-      from: 'ai',
-      body: <p>I'd split <strong>AG-026</strong> into UI + API tickets.</p>,
-      time: 'now',
-    };
-  }
-  if (/summar/i.test(txt)) {
-    return {
-      from: 'ai',
-      body: <p>3 stories: login → ingestion → push. ~4–6 points each.</p>,
-      time: 'now',
-    };
-  }
-  return { from: 'ai', body: <p>Done. Anything else?</p>, time: 'now' };
 }

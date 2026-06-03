@@ -3,21 +3,25 @@ import { MeetingDropdown } from '../components/meeting-dropdown';
 import { useMeetings } from '../hooks/use-meetings';
 import { useAppDispatch, useAppState } from '../state/app-state-context';
 
-const EXTRACTION_SIMULATION_MS = 1400;
+type Props = {
+  onStartExtraction?: () => Promise<string | null>;
+  loading?: boolean;
+  error?: string | null;
+};
 
-export function MeetingsEmpty() {
+export function MeetingsEmpty({ onStartExtraction, loading, error: lifecycleError }: Props = {}) {
   const { selectedMeetingId } = useAppState();
-  // Live meetings from /meetings — replaces seed data. Per red-team Finding 12,
-  // fetch is hoisted here (panel level), not pushed into MeetingDropdown.
-  const { meetings, loading, error } = useMeetings();
+  const { meetings, loading: meetingsLoading, error: meetingsError } = useMeetings();
   const dispatch = useAppDispatch();
 
-  // Picking a meeting both records the selection and kicks off extraction.
-  // Matches the meetings-list "Re-extract" simulation timing.
-  const pickAndExtract = (id: string) => {
+  const pickMeeting = (id: string) => {
     dispatch({ type: 'SET_SELECTED_MEETING', payload: id });
+  };
+
+  const handleStart = async () => {
+    if (!onStartExtraction) return;
     dispatch({ type: 'START_EXTRACTION' });
-    setTimeout(() => dispatch({ type: 'FINISH_EXTRACTION' }), EXTRACTION_SIMULATION_MS);
+    await onStartExtraction();
   };
 
   return (
@@ -42,25 +46,32 @@ export function MeetingsEmpty() {
         </div>
         <div className="ag-empty-title">No stories yet</div>
         <div className="ag-empty-sub">
-          Connect a meeting recording, paste a transcript, or invite Genesis Bot to your next call.
-          Stories will appear here.
+          Pick a meeting recording and click <strong>Start extraction</strong>.
+          Stories will appear here once Claude finishes.
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexDirection: 'column' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <MeetingDropdown
               meetings={meetings}
               selectedId={selectedMeetingId}
-              onSelect={pickAndExtract}
-              placeholder={loading ? 'Loading meetings…' : 'Select a meeting'}
+              onSelect={pickMeeting}
+              placeholder={meetingsLoading ? 'Loading meetings…' : 'Select a meeting'}
               size="lg"
             />
-            <button type="button" className="ag-btn" data-size="lg">
-              <Icon.Plus width={13} height={13} /> Paste transcript
+            <button
+              type="button"
+              className="ag-btn"
+              data-size="lg"
+              data-variant="primary"
+              disabled={!selectedMeetingId || loading}
+              onClick={handleStart}
+            >
+              <Icon.Sparkle width={13} height={13} /> Start extraction
             </button>
           </div>
-          {error && (
+          {(meetingsError || lifecycleError) && (
             <div style={{ fontSize: 12, color: 'var(--ag-danger)' }}>
-              Failed to load meetings: {error}
+              {meetingsError ?? lifecycleError}
             </div>
           )}
         </div>

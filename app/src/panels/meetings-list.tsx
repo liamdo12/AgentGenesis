@@ -2,11 +2,10 @@ import { AgStoryCard } from '@ds/components/ag-story-card';
 import { AgBulkBar } from '@ds/components/ag-bulk-bar';
 import { Icon } from '@ds/lib/icons';
 import { MeetingDropdown } from '../components/meeting-dropdown';
+import { useApprovals } from '../hooks/use-approvals';
 import { useMeetings } from '../hooks/use-meetings';
 import { useAppDispatch, useAppState } from '../state/app-state-context';
 import type { StoryFilter } from '../state/app-state-types';
-
-const EXTRACTION_SIMULATION_MS = 1400;
 
 const FILTERS: { id: StoryFilter; label: string }[] = [
   { id: 'all',      label: 'All' },
@@ -16,11 +15,12 @@ const FILTERS: { id: StoryFilter; label: string }[] = [
 ];
 
 export function MeetingsList() {
-  const { stories, filter, search, selected, approved, selectedMeetingId } = useAppState();
+  const { stories, filter, search, selected, selectedMeetingId, activeRunId } = useAppState();
   // Real meetings from /meetings — overrides any seed data in app state.
   // Per red-team Finding 12.
   const { meetings } = useMeetings();
   const dispatch = useAppDispatch();
+  const { approved, toggle, bulkApprove, error: approvalsError } = useApprovals(activeRunId);
 
   const filtered = stories.filter((s) => {
     if (filter === 'pending' && approved.has(s.id)) return false;
@@ -40,17 +40,12 @@ export function MeetingsList() {
     high: stories.filter((s) => s.priority === 'high').length,
   };
 
-  const startExtraction = () => {
-    dispatch({ type: 'START_EXTRACTION' });
-    setTimeout(() => dispatch({ type: 'FINISH_EXTRACTION' }), EXTRACTION_SIMULATION_MS);
-  };
-
-  // Switching the selected meeting via the dropdown implicitly re-extracts;
-  // the user's intent is "pick a meeting and pull its stories".
+  // Picking a meeting via the dropdown just updates selection. Re-extraction
+  // is now an explicit user action via the "Re-extract" button so cost is
+  // gated on intent.
   const handlePickMeeting = (id: string) => {
     if (id === selectedMeetingId) return;
     dispatch({ type: 'SET_SELECTED_MEETING', payload: id });
-    startExtraction();
   };
 
   return (
@@ -75,7 +70,11 @@ export function MeetingsList() {
           <button type="button" className="ag-btn" data-variant="ghost">
             <Icon.Sort width={12} height={12} /> Priority
           </button>
-          <button type="button" className="ag-btn" onClick={startExtraction}>
+          <button
+            type="button"
+            className="ag-btn"
+            onClick={() => dispatch({ type: 'START_EXTRACTION' })}
+          >
             <Icon.Sparkle width={12} height={12} /> Re-extract
           </button>
           <button type="button" className="ag-btn" data-variant="primary">
@@ -135,7 +134,7 @@ export function MeetingsList() {
             story={s}
             selected={selected.has(s.id)}
             approved={approved.has(s.id)}
-            onToggleSelect={() => dispatch({ type: 'TOGGLE_SELECT', payload: s.id })}
+            onToggleSelect={() => toggle(s.id)}
             onClick={() =>
               dispatch({ type: 'OPEN_MODAL', payload: { kind: 'edit', storyId: s.id } })
             }
@@ -143,10 +142,19 @@ export function MeetingsList() {
         ))}
       </div>
 
+      {approvalsError && (
+        <div style={{ fontSize: 12, color: 'var(--ag-danger)', padding: '6px 12px' }}>
+          Couldn't save approvals: {approvalsError}
+        </div>
+      )}
+
       {selected.size > 0 && (
         <AgBulkBar
           count={selected.size}
-          onApprove={() => dispatch({ type: 'BULK_APPROVE' })}
+          onApprove={() => {
+            bulkApprove(Array.from(selected));
+            dispatch({ type: 'CLEAR_SELECT' });
+          }}
           onClear={() => dispatch({ type: 'CLEAR_SELECT' })}
           onPush={() => dispatch({ type: 'OPEN_MODAL', payload: { kind: 'devops' } })}
         />

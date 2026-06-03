@@ -1,4 +1,5 @@
-import type { Meeting, Message, Story } from '@ds/lib/seed-data';
+import type { Meeting, Message } from '@ds/lib/seed-data';
+import type { ApiRun, RunStatus, Story } from '../lib/story-types';
 import type { Tweaks } from '../lib/use-tweaks';
 
 export type TopTab = 'Meetings' | 'Stories' | 'Dashboard';
@@ -28,6 +29,10 @@ export type AppState = {
   // `null` only briefly on cold start before the dropdown defaults to the
   // first meeting; UI treats null as "no meeting selected" (empty state).
   selectedMeetingId: string | null;
+  // Live run state — populated by the run-lifecycle hooks.
+  activeRunId: string | null;
+  runStatus: RunStatus | null;
+  runError: string | null;
 };
 
 export type Action =
@@ -45,6 +50,11 @@ export type Action =
   | { type: 'SET_SELECTED_MEETING'; payload: string }
   | { type: 'START_EXTRACTION' }
   | { type: 'FINISH_EXTRACTION' }
+  | { type: 'SET_ACTIVE_RUN'; payload: string | null }
+  | { type: 'SET_STORIES_FROM_SERVER'; payload: Story[] }
+  | { type: 'RUN_PROGRESS'; payload: ApiRun }
+  | { type: 'RUN_DONE'; payload: ApiRun }
+  | { type: 'RUN_FAILED'; payload: { error: string } }
   | { type: 'SEND_USER_MESSAGE'; payload: Message }
   | { type: 'AI_REPLY'; payload: Message }
   | { type: 'AI_THINKING'; payload: boolean }

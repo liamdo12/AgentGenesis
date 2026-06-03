@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { Icon, type IconName } from './icons';
 
 export type Priority = 'high' | 'med' | 'low';
-export type Status = 'approved' | 'pending';
 
 export type Meeting = {
   id: string;
@@ -32,7 +31,6 @@ export type Story = {
   ac: string;
   tags: string[];
   priority: Priority;
-  status: Status;
   meeting: string;
 };
 
@@ -46,7 +44,6 @@ export const AG_STORIES: Story[] = [
     ac: 'Given SSO is configured, when I visit the URL, then I see the Azure AD login prompt.',
     tags: ['Auth'],
     priority: 'high',
-    status: 'approved',
     meeting: 'Sprint Planning · Aug 22',
   },
   {
@@ -58,7 +55,6 @@ export const AG_STORIES: Story[] = [
     ac: "Given I'm authenticated, when I select a meeting, then the transcript loads within 3 seconds.",
     tags: ['Meetings'],
     priority: 'high',
-    status: 'pending',
     meeting: 'Sprint Planning · Aug 22',
   },
   {
@@ -70,7 +66,6 @@ export const AG_STORIES: Story[] = [
     ac: 'Given at least one story is approved, when I click Push, then PBIs are created in the configured project.',
     tags: ['DevOps'],
     priority: 'med',
-    status: 'pending',
     meeting: 'Sprint Planning · Aug 22',
   },
   {
@@ -82,7 +77,6 @@ export const AG_STORIES: Story[] = [
     ac: 'Given a story has fewer than 3 AC, when I click Refine, then Claude proposes 3+ AC in GWT format.',
     tags: ['AI'],
     priority: 'med',
-    status: 'pending',
     meeting: 'Sprint Planning · Aug 22',
   },
   {
@@ -94,7 +88,6 @@ export const AG_STORIES: Story[] = [
     ac: 'Given a story is approved, when I open it, then I see a suggested estimate with 3 nearest neighbours.',
     tags: ['Meetings'],
     priority: 'low',
-    status: 'pending',
     meeting: 'Sprint Planning · Aug 22',
   },
 ];

@@ -1,13 +1,13 @@
-import { AG_MEETINGS, AG_MESSAGES, AG_STORIES } from '@ds/lib/seed-data';
+import { AG_MEETINGS, AG_MESSAGES } from '@ds/lib/seed-data';
 import { DEFAULT_TWEAKS } from '../lib/use-tweaks';
 import type { Action, AppState } from './app-state-types';
 
 export function initialState(): AppState {
   return {
     topTab: 'Stories',
-    stories: AG_STORIES,
+    stories: [],
     selected: new Set(),
-    approved: new Set(['AG-024']),
+    approved: new Set(),
     focused: null,
     filter: 'all',
     search: '',
@@ -21,6 +21,9 @@ export function initialState(): AppState {
     // Seeded to the first meeting so the list view's "From <meeting>" subhead
     // has a value to display without the user picking one first.
     selectedMeetingId: AG_MEETINGS[0]?.id ?? null,
+    activeRunId: null,
+    runStatus: null,
+    runError: null,
   };
 }
 
@@ -100,6 +103,26 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'SET_COMPOSER':
       return { ...state, composer: action.payload };
+
+    case 'SET_ACTIVE_RUN':
+      return { ...state, activeRunId: action.payload, runError: null };
+
+    case 'SET_STORIES_FROM_SERVER':
+      return { ...state, stories: action.payload };
+
+    case 'RUN_PROGRESS':
+      return { ...state, runStatus: action.payload.status, runError: action.payload.error };
+
+    case 'RUN_DONE':
+      return {
+        ...state,
+        runStatus: action.payload.status,
+        runError: null,
+        phase: 'idle',
+      };
+
+    case 'RUN_FAILED':
+      return { ...state, runStatus: 'failed', runError: action.payload.error, phase: 'idle' };
 
     case 'SET_TWEAK':
       return {
