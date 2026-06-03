@@ -73,27 +73,54 @@ class GraphRunner:
         )
 
     async def hydrate_from_db(self) -> None:
-        """Load persisted Run rows into the in-memory store. Idempotent."""
+        """Load persisted Run rows into the in-memory store. Idempotent.
+
+        Non-terminal runs cannot be safely resumed across a process restart:
+        the LangGraph checkpoint sqlite is shared but the in-memory graph
+        executor isn't, and a code revision that changed the state schema
+        will KeyError mid-resume. We force-mark them as failed on hydrate
+        so approvals + chat history stay queryable but `/resume` won't
+        re-enter a stale checkpoint.
+        """
         if self._db_session_factory is None:
             return
         async with self._db_session_factory() as session:
             rows = await repository.list_runs_all(session)
+        invalidated = 0
         async with self._lock:
             for r in rows:
                 if r.id in self._runs:
                     continue
+                status = RunStatus(r.status)
+                if status not in _TERMINAL_STATUSES:
+                    status = RunStatus.FAILED
+                    invalidated += 1
                 self._runs[r.id] = Run(
                     id=r.id,
                     meeting_id=r.meeting_id,
                     user_oid=r.user_oid,
-                    status=RunStatus(r.status),
+                    status=status,
                     progress=r.progress,
-                    error=r.error,
+                    error=(
+                        "checkpoint invalidated on restart — re-submit"
+                        if invalidated and status == RunStatus.FAILED and r.error is None
+                        else r.error
+                    ),
                     created_at=r.created_at,
                     finished_at=r.finished_at,
                     output_dir=r.output_dir,
                 )
-        log.info("runner.hydrate", count=len(rows))
+        # Write the invalidated status back through so subsequent restarts
+        # see the terminal state and don't re-process this row.
+        if invalidated:
+            for run in list(self._runs.values()):
+                if run.status == RunStatus.FAILED and run.error == "checkpoint invalidated on restart — re-submit":
+                    await self._persist_run(run)
+        log.info(
+            "runner.hydrate",
+            count=len(rows),
+            invalidated_non_terminal=invalidated,
+        )
 
     async def shutdown(self) -> None:
         # Cancel anything in-flight before tearing down the checkpointer.
@@ -292,6 +319,13 @@ class GraphRunner:
         if not candidate.is_relative_to(base):
             return None
         return candidate
+
+
+_TERMINAL_STATUSES = frozenset({
+    RunStatus.DONE,
+    RunStatus.FAILED,
+    RunStatus.PENDING_TRANSCRIPT,
+})
 
 
 # phase_label → RunStatus mapping. Anything we don't recognize keeps the
