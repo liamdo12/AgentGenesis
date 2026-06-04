@@ -78,5 +78,9 @@ export async function apiJson<T>(path: string, opts: RequestInit = {}): Promise<
 }
 
 async function redirectToLogin(): Promise<void> {
-  await pca.loginPopup(popupRequest);
+  // Full-page redirect (not popup) so the user lands at
+  // /auth/login/callback after re-auth and MSAL's main.tsx handler
+  // consumes the new fragment. Popup login would 401-loop because the
+  // SPA platform now registers only the callback URI.
+  await pca.loginRedirect(popupRequest);
 }

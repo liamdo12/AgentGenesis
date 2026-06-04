@@ -14,7 +14,11 @@ export const msalConfig: Configuration = {
   auth: {
     clientId,
     authority: `https://login.microsoftonline.com/${tenant}`,
-    redirectUri: window.location.origin,
+    // SPA flow uses a dedicated callback route so MSAL has somewhere
+    // explicit to land. The Entra app reg must list this exact URI under
+    // its Single-page application platform.
+    redirectUri: `${window.location.origin}/auth/login/callback`,
+    // Logout still lands at origin; no `/auth/logout/callback` registered.
     postLogoutRedirectUri: window.location.origin,
   },
   // sessionStorage minimizes XSS exposure compared to localStorage. Per plan

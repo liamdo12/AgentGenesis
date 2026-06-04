@@ -46,7 +46,9 @@ export function useActiveAccount(): {
 
   const login = useCallback(async () => {
     if (isFake) return;
-    await instance.loginPopup(popupRequest);
+    // Full-page redirect to /auth/login/callback (registered URI). Popup
+    // would 401 because the SPA platform no longer lists the bare origin.
+    await instance.loginRedirect(popupRequest);
   }, [instance, isFake]);
 
   const logout = useCallback(async () => {
@@ -56,7 +58,8 @@ export function useActiveAccount(): {
       window.location.href = u.toString();
       return;
     }
-    await instance.logoutPopup();
+    // Consistency with loginRedirect. Lands at postLogoutRedirectUri (=origin).
+    await instance.logoutRedirect();
   }, [instance, isFake]);
 
   return { active, isAuthenticated, login, logout };
