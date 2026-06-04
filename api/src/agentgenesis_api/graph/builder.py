@@ -1,30 +1,21 @@
 """Builds the LangGraph StateGraph for the extraction pipeline.
 
-Topology:
+Topology (serialized, June 2026):
 
-    START
-      │
-      ▼
-    fetch_meeting_ref
-      │
-      ├── fetch_transcript ───┐
-      │                       ▼
-      └── fetch_recording ─► extract_frames
-                              │
-                              ▼ (join)
-                        merge_context
-                              │
-                              ▼
-                        claude_summary
-                              │
-                              ▼
-                      claude_draft_stories
-                              │
-                              ▼
-                             END
+    START → fetch_meeting_ref → fetch_transcript → fetch_recording
+          → extract_frames → merge_context → claude_summary
+          → claude_draft_stories → END
 
-`fetch_transcript` and `fetch_recording → extract_frames` run as parallel
-branches from `fetch_meeting_ref`. `merge_context` is the join point.
+Why sequential, not parallel?
+    LangGraph 1.x's BSP scheduler does not give us a clean AND-join on
+    `add_edge(A, C) + add_edge(B, C)`: `merge_context` fired as soon as
+    `fetch_transcript` completed even though `extract_frames` was still
+    in flight. The resulting `multimodal_context` had `windows=0` /
+    `selected_frames=0`, Claude returned no stories, and downstream
+    nodes silently produced empty output. The parallel topology saved
+    ~10-30s on a real meeting but cost correctness on every run.
+    Serializing eliminates both the early-fire race and the BSP state
+    invisibility issue.
 """
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -88,9 +79,8 @@ def build_graph(
 
     g.add_edge(START, "fetch_meeting_ref")
     g.add_edge("fetch_meeting_ref", "fetch_transcript")
-    g.add_edge("fetch_meeting_ref", "fetch_recording")
+    g.add_edge("fetch_transcript", "fetch_recording")
     g.add_edge("fetch_recording", "extract_frames")
-    g.add_edge("fetch_transcript", "merge_context")
     g.add_edge("extract_frames", "merge_context")
     g.add_edge("merge_context", "claude_summary")
     g.add_edge("claude_summary", "claude_draft_stories")

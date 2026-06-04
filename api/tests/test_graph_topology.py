@@ -19,12 +19,14 @@ def test_topology_edges() -> None:
     g = build_graph()
     edges = {(e.source, e.target) for e in g.get_graph().edges}
 
+    # Serialized topology (June 2026). LangGraph 1.x BSP parallel-join
+    # semantics fired merge_context before extract_frames completed,
+    # producing empty multimodal_context. See builder.py header for why.
     expected = {
         ("__start__", "fetch_meeting_ref"),
         ("fetch_meeting_ref", "fetch_transcript"),
-        ("fetch_meeting_ref", "fetch_recording"),
+        ("fetch_transcript", "fetch_recording"),
         ("fetch_recording", "extract_frames"),
-        ("fetch_transcript", "merge_context"),
         ("extract_frames", "merge_context"),
         ("merge_context", "claude_summary"),
         ("claude_summary", "claude_draft_stories"),
