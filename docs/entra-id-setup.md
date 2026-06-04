@@ -7,7 +7,9 @@ Estimated time: **15–20 minutes**. Requires tenant admin to grant consent for 
 ## Prerequisites
 
 - Tenant admin or "Cloud Application Administrator" role.
-- The frontend dev URL: `http://localhost:5173` (or your prod equivalent).
+- The frontend dev URL: `http://localhost:5174` (or your prod equivalent). MSAL uses
+  `loginRedirect`, so the redirect URI registered in Entra MUST include the callback
+  path `/auth/login/callback`, NOT just the origin.
 
 ---
 
@@ -20,7 +22,7 @@ Azure portal → **Microsoft Entra ID** → **App registrations** → **New regi
 | Name | `Agent Genesis` (or anything) |
 | Supported account types | **Single tenant** (recommended for v1) |
 | Redirect URI platform | **Single-page application (SPA)** |
-| Redirect URI | `http://localhost:5173` |
+| Redirect URI | `http://localhost:5174/auth/login/callback` |
 
 Register. Copy these from the **Overview** blade:
 - **Directory (tenant) ID** → `AG_ENTRA_TENANT_ID`
@@ -166,7 +168,9 @@ uv run uvicorn agentgenesis_api.main:create_app --factory --port 8000
 
 Boot must succeed. If you see `ValidationError: AG_ENTRA_TENANT_ID is missing`, recheck step 6.
 
-Once Phase 6 lands, hit `http://localhost:5173`, sign in, and `GET /meetings` should return your Teams meetings.
+Once the frontend is wired, hit `http://localhost:5174`, click sign-in (which calls
+`pca.loginRedirect`), land on `/auth/login/callback`, get redirected back to `/`
+authed, and `GET /meetings` should return your Teams meetings.
 
 ---
 
