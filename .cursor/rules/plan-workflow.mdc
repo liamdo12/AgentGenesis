@@ -1,0 +1,125 @@
+---
+description: Multi-step plan / validate / red-team / cook workflow modeled on ClaudeKit's ck:plan. Auto-attached when working in the plans/ directory or when the user mentions planning / architecture / design.
+globs:
+  - "plans/**/*.md"
+  - "AGENTS.md"
+alwaysApply: false
+---
+
+# Planning Workflow
+
+This project uses a multi-phase planning workflow inspired by ClaudeKit's
+`ck:plan`. When the user asks you to plan something (verbs: plan, architect,
+design, scope, blueprint, roadmap), follow this workflow.
+
+## 0. Prerequisites — check the engine
+
+The `ck` CLI scaffolds plan files. If not installed:
+
+```bash
+npm install -g claudekit
+```
+
+If `ck` is unavailable, fall back to creating the same file structure by
+hand using the templates in §5. The workflow still applies; just the
+scaffolding step changes.
+
+## 1. Pre-creation check
+
+Before creating a new plan, scan `plans/` for unfinished plans in the same
+scope. If you find overlap, declare a `blockedBy` / `blocks` relationship
+in the frontmatter of both plans. Use the pattern
+`YYMMDD-HHMM-<kebab-slug>` for plan directory names.
+
+## 2. Scope challenge (skip for `--fast`)
+
+Before drafting the plan, ask the user 1-3 sharp questions to challenge
+scope: "is X really in scope?", "what's the smallest thing that proves
+this?", "what specifically is out of scope?". Don't ask vague questions.
+
+## 3. Auto-detect mode
+
+| Mode | When to pick | Behavior |
+|---|---|---|
+| `--fast` | User says "quick", "trivial", or scope is one file | Skip research, skip red-team, skip validate. Go straight to phases. |
+| `--auto` (default) | Moderate scope, user hasn't specified | Research if uncertain, optional red-team. |
+| `--hard` | Auth, security, payments, data integrity, public APIs | Red-team review MANDATORY. |
+| `--deep` | System-wide architectural change | Research + red-team + validate. |
+| `--parallel` | Multi-track independent work | Spawn multiple plan trees. |
+
+## 4. Codebase scout
+
+Before writing the plan, read the affected files. Cite `file:line` in the
+plan so the operator can navigate. Don't write a plan for code you haven't
+read.
+
+## 5. Plan file structure
+
+Create `plans/YYMMDD-HHMM-<slug>/`:
+
+- `plan.md` — overview + phases table + locked decisions + dependencies +
+  out-of-scope + (optional) red-team review section.
+- `phase-NN-<slug>.md` — one per phase. Each has frontmatter:
+  ```yaml
+  ---
+  phase: 1
+  title: "Phase name"
+  status: pending
+  priority: P1
+  effort: "30m"
+  dependencies: []
+  ---
+  ```
+  Body: Overview, Requirements, Architecture, Related Code Files (Create
+  / Modify / Delete), Implementation Steps, Success Criteria, Risk
+  Assessment.
+
+If `ck` is installed:
+
+```bash
+ck plan create \
+  --title "<plan title>" \
+  --phases "Phase 1 name,Phase 2 name,..." \
+  --dir plans/YYMMDD-HHMM-<slug>
+```
+
+Then read every generated stub before populating (Cursor enforces
+read-before-write on existing files).
+
+## 6. Post-plan handoff
+
+After writing the plan, present 3-4 options:
+
+1. `/red-team` — adversarial review (recommended if the plan touches auth,
+   security, payments, data, public APIs).
+2. `/validate` — critical-questions interview (recommended for moderate
+   scope with ambiguity).
+3. `/cook <plan-path>` — start implementation.
+4. End session — user reviews offline.
+
+Use the recommended-first convention. Don't offer red-team or validate if
+the active mode already auto-ran them.
+
+## 7. Consistency sweep
+
+After EVERY edit to plan files (validate or red-team revisions), re-read
+`plan.md` + every `phase-*.md` and grep for:
+
+- Stale terms / renamed APIs.
+- Rejected assumptions still cited as decisions.
+- Numbers that drifted (effort estimates, thresholds).
+- Duplicate embedded drafts.
+
+Report contradictions. Don't recommend `/cook` until zero contradictions
+remain.
+
+## Hard rules
+
+1. **Plans go in `plans/<dir>/`, never anywhere else.** Reports go in
+   `plans/reports/`.
+2. **Never write a plan without scout findings cited as `file:line`.**
+3. **Don't silently expand scope** — user-confirmed scope is sticky. If
+   red-team suggests adding work, surface as a `AskUserQuestion`-style
+   choice, don't apply.
+4. **Plan files NEVER reference plan internals in code** (no "see phase
+   3" in code comments). Code references must be stable.
