@@ -3,21 +3,26 @@
 Per-call delegated tokens come from `TokenBroker.acquire_graph_token` (Phase 3
 of the SSO plan), so every Graph request runs under the calling user's identity.
 
-`list_meeting_recordings` does a calendar walk:
-  1. GET /me/events filtered by isOnlineMeeting + start date window.
-  2. For each event, resolve the meeting via JoinWebUrl filter.
-  3. For each meeting, GET /recordings.
+`list_meeting_recordings` calls a single Graph endpoint:
 
-Per red-team Finding 1: `/me/onlineMeetings` is NOT a listable collection.
-The only supported filters are `JoinWebUrl eq '<url>'` and
-`joinMeetingIdSettings/joinMeetingId eq '<id>'`. Time-window filtering happens
-on `/me/events`.
+    GET /v1.0/me/onlineMeetings/getAllRecordings
+
+This returns every cloud recording the signed-in user has access to (as
+organizer) in one shot. We dedupe by `meetingId` (a meeting can have
+multiple recording chunks if paused/resumed), keep the latest per meeting,
+and build `MeetingRef` rows.
+
+Why not the calendar walk anymore? It required `Calendars.Read` +
+`OnlineMeetings.Read` scopes the app reg doesn't grant (→ 403), and it
+returned upcoming events too. `getAllRecordings` needs only
+`OnlineMeetingRecording.Read.All` (already in `graph_delegated_scopes`)
+and returns recordings only by construction.
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -38,8 +43,6 @@ from agentgenesis_api.msgraph.models import (
 
 log = get_logger("agentgenesis_api.msgraph.graph_client")
 
-# Calendar-walk window. Hardcoded per red-team Scope F9 (no operator knob).
-_LOOKBACK_DAYS = 30
 _MAX_RETRIES = 3
 _BASE_BACKOFF_SEC = 1.0
 
@@ -58,42 +61,27 @@ class GraphClient:
     # ───────────────────────── public API ─────────────────────────
 
     async def list_meeting_recordings(self, user, limit: int = 50) -> list[MeetingRef]:
-        """Calendar walk: events with isOnlineMeeting → resolve meeting → list recordings."""
-        since = (datetime.now(UTC) - timedelta(days=_LOOKBACK_DAYS)).isoformat().replace("+00:00", "Z")
-        events_url = (
-            f"/v1.0/me/events?$filter=isOnlineMeeting eq true and start/dateTime ge '{since}'"
-            f"&$top={min(limit, 100)}&$select=id,subject,start,organizer,onlineMeeting"
-        )
-        events_data = await self._authed_get_json(user, events_url)
-        events = events_data.get("value", [])
+        """Return every meeting the user has at least one recording for.
 
-        refs: list[MeetingRef] = []
-        for ev in events:
-            online = ev.get("onlineMeeting") or {}
-            join_url = online.get("joinUrl")
-            if not join_url:
+        Single Graph call. Recordings deduped by `meetingId`, latest by
+        `createdDateTime` wins. Sorted newest first; capped at `limit`.
+        """
+        url = f"/v1.0/me/onlineMeetings/getAllRecordings?$top={limit}"
+        data = await self._authed_get_json(user, url)
+        recordings = data.get("value", [])
+
+        by_meeting: dict[str, dict[str, Any]] = {}
+        for r in recordings:
+            mid = r.get("meetingId")
+            if not mid:
                 continue
-            try:
-                meeting = await self._resolve_meeting(user, join_url)
-                # Skip meetings with no recordings — caller wants recordings only.
-                if not await self._has_any_recording(user, meeting["id"]):
-                    continue
-            except MsGraphCallError as e:
-                # Per-meeting 403/404 → skip this row, keep walking.
-                log.info("graph.list.skip", meeting_id=online.get("conferenceId"), status=e.status)
-                continue
-            refs.append(
-                MeetingRef(
-                    id=meeting["id"],
-                    title=ev.get("subject") or "(no subject)",
-                    organizer=(ev.get("organizer") or {}).get("emailAddress", {}).get("name") or "Unknown",
-                    start_iso=_parse_iso(ev["start"]["dateTime"]),
-                    duration_sec=_event_duration_sec(ev),
-                )
-            )
-            if len(refs) >= limit:
-                break
-        return refs
+            prev = by_meeting.get(mid)
+            if prev is None or r.get("createdDateTime", "") > prev.get("createdDateTime", ""):
+                by_meeting[mid] = r
+
+        refs = [_to_meeting_ref(r) for r in by_meeting.values()]
+        refs.sort(key=lambda m: m.start_iso, reverse=True)
+        return refs[:limit]
 
     async def get_transcript(self, user, meeting_id: str) -> TranscriptArtifact:
         """Latest transcript as VTT text."""
@@ -138,21 +126,6 @@ class GraphClient:
 
     # ───────────────────────── internals ─────────────────────────
 
-    async def _resolve_meeting(self, user, join_url: str) -> dict[str, Any]:
-        # Single-meeting lookup by JoinWebUrl (the only supported filter).
-        escaped = join_url.replace("'", "''")
-        url = f"/v1.0/me/onlineMeetings?$filter=JoinWebUrl eq '{escaped}'"
-        data = await self._authed_get_json(user, url)
-        items = data.get("value", [])
-        if not items:
-            raise MsGraphCallError("resolve_meeting", "no match for join_url", status=404)
-        return items[0]
-
-    async def _has_any_recording(self, user, meeting_id: str) -> bool:
-        url = f"/v1.0/me/onlineMeetings/{meeting_id}/recordings"
-        data = await self._authed_get_json(user, url)
-        return bool(data.get("value"))
-
     async def _authed_get_json(self, user, url: str) -> dict[str, Any]:
         token = await self._broker.acquire_graph_token(user, self._settings.graph_delegated_scopes)
         resp = await self._call(url, token=token, accept="application/json")
@@ -191,16 +164,39 @@ class GraphClient:
         raise MsGraphCallError(tool, body_excerpt, status=resp.status_code)
 
 
+# ───────────────────────── helpers ─────────────────────────
+
+
+def _to_meeting_ref(recording: dict[str, Any]) -> MeetingRef:
+    """Build a MeetingRef from a Graph `callRecording` item.
+
+    Falls back gracefully when fields are missing — Graph occasionally
+    omits `endDateTime` for in-progress recordings, and
+    `meetingOrganizer` may be null for federated users.
+    """
+    started_at = _parse_iso(recording.get("createdDateTime") or "")
+    ended_at = _parse_iso(recording.get("endDateTime") or "") if recording.get("endDateTime") else None
+    duration = (ended_at - started_at).total_seconds() if ended_at else 0.0
+
+    organizer_name = (
+        ((recording.get("meetingOrganizer") or {}).get("user") or {}).get("displayName")
+        or "Unknown"
+    )
+    title = f"{organizer_name} · {started_at.strftime('%b %d')}" if organizer_name != "Unknown" \
+        else f"Recording · {started_at.strftime('%b %d')}"
+
+    return MeetingRef(
+        id=recording["meetingId"],
+        title=title,
+        organizer=organizer_name,
+        start_iso=started_at,
+        duration_sec=duration,
+    )
+
+
 def _parse_iso(value: str) -> datetime:
-    # Graph emits "2026-05-28T10:00:00.0000000" — strip sub-second + add tz.
+    # Graph emits "2026-05-28T10:00:00.0000000Z" — strip sub-second + add tz.
+    if not value:
+        return datetime.now(UTC)
     cleaned = value.rstrip("Z").split(".")[0]
     return datetime.fromisoformat(cleaned).replace(tzinfo=UTC)
-
-
-def _event_duration_sec(ev: dict[str, Any]) -> float:
-    try:
-        start = _parse_iso(ev["start"]["dateTime"])
-        end = _parse_iso(ev["end"]["dateTime"])
-        return (end - start).total_seconds()
-    except (KeyError, ValueError):
-        return 0.0

@@ -18,6 +18,10 @@ from agentgenesis_api.msgraph import (
 )
 from agentgenesis_api.msgraph.graph_client import GraphClient
 
+_GETALL_URL_PREFIX = (
+    "https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllRecordings"
+)
+
 
 class _FakeBroker:
     """Stand-in for TokenBroker."""
@@ -41,78 +45,148 @@ def _user(oid: str = "alice") -> User:
     return User(oid=oid, tid="t-1", raw_token=SecretStr("user-jwt"))
 
 
+def _recording(
+    *,
+    rid: str,
+    meeting_id: str,
+    organizer: str | None = "Alice Smith",
+    created: str = "2026-08-22T14:00:00Z",
+    ended: str | None = "2026-08-22T14:42:00Z",
+) -> dict:
+    item: dict = {
+        "id": rid,
+        "meetingId": meeting_id,
+        "createdDateTime": created,
+    }
+    if ended is not None:
+        item["endDateTime"] = ended
+    if organizer is not None:
+        item["meetingOrganizer"] = {"user": {"displayName": organizer}}
+    return item
+
+
 # ───────────────────────── list_meeting_recordings ─────────────────────────
 
 
 @respx.mock
-async def test_list_meeting_recordings_calendar_walk() -> None:
-    respx.get(url__startswith="https://graph.microsoft.com/v1.0/me/events").mock(
+async def test_list_returns_one_per_unique_meeting() -> None:
+    """3 recordings, 2 unique meetings → 2 refs, newest first."""
+    respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
         return_value=httpx.Response(
             200,
             json={
                 "value": [
-                    {
-                        "id": "evt-1",
-                        "subject": "Sprint Planning",
-                        "start": {"dateTime": "2026-08-22T14:00:00"},
-                        "end": {"dateTime": "2026-08-22T14:30:00"},
-                        "organizer": {"emailAddress": {"name": "Alice"}},
-                        "onlineMeeting": {"joinUrl": "https://teams.microsoft.com/m1"},
-                    }
+                    _recording(rid="r1", meeting_id="m1", created="2026-08-22T14:00:00Z"),
+                    _recording(rid="r2", meeting_id="m2", created="2026-08-21T10:00:00Z"),
+                    # Second recording on m1, newer → wins the dedupe.
+                    _recording(rid="r3", meeting_id="m1", created="2026-08-22T15:00:00Z"),
                 ]
             },
         )
     )
-    # Resolve meeting by JoinWebUrl filter.
-    respx.get(
-        url__startswith="https://graph.microsoft.com/v1.0/me/onlineMeetings?"
-    ).mock(return_value=httpx.Response(200, json={"value": [{"id": "m-resolved"}]}))
-    respx.get(
-        "https://graph.microsoft.com/v1.0/me/onlineMeetings/m-resolved/recordings"
-    ).mock(return_value=httpx.Response(200, json={"value": [{"id": "r-1"}]}))
 
     c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
     try:
         refs = await c.list_meeting_recordings(_user(), limit=5)
-        assert len(refs) == 1
-        assert refs[0].id == "m-resolved"
-        assert refs[0].title == "Sprint Planning"
-        assert refs[0].organizer == "Alice"
+        assert [r.id for r in refs] == ["m1", "m2"]  # m1 first (newer)
+        assert refs[0].title.startswith("Alice Smith · ")
+        assert refs[0].organizer == "Alice Smith"
     finally:
         await c.aclose()
 
 
 @respx.mock
-async def test_list_skips_events_with_no_recording() -> None:
-    respx.get(url__startswith="https://graph.microsoft.com/v1.0/me/events").mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "value": [
-                    {
-                        "id": "evt-1",
-                        "subject": "Empty meeting",
-                        "start": {"dateTime": "2026-08-22T14:00:00"},
-                        "end": {"dateTime": "2026-08-22T14:30:00"},
-                        "organizer": {"emailAddress": {"name": "Alice"}},
-                        "onlineMeeting": {"joinUrl": "https://teams.microsoft.com/m1"},
-                    }
-                ]
-            },
-        )
+async def test_list_empty_response() -> None:
+    respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
+        return_value=httpx.Response(200, json={"value": []})
     )
-    respx.get(url__startswith="https://graph.microsoft.com/v1.0/me/onlineMeetings?").mock(
-        return_value=httpx.Response(200, json={"value": [{"id": "m-resolved"}]})
-    )
-    # No recordings.
-    respx.get(
-        "https://graph.microsoft.com/v1.0/me/onlineMeetings/m-resolved/recordings"
-    ).mock(return_value=httpx.Response(200, json={"value": []}))
 
     c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
     try:
         refs = await c.list_meeting_recordings(_user(), limit=5)
         assert refs == []
+    finally:
+        await c.aclose()
+
+
+@respx.mock
+async def test_list_missing_organizer_falls_back_to_recording_label() -> None:
+    respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
+        return_value=httpx.Response(
+            200,
+            json={"value": [_recording(rid="r1", meeting_id="m1", organizer=None)]},
+        )
+    )
+
+    c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
+    try:
+        refs = await c.list_meeting_recordings(_user(), limit=5)
+        assert len(refs) == 1
+        assert refs[0].title.startswith("Recording · ")
+        assert refs[0].organizer == "Unknown"
+    finally:
+        await c.aclose()
+
+
+@respx.mock
+async def test_list_missing_end_datetime_yields_zero_duration() -> None:
+    respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
+        return_value=httpx.Response(
+            200,
+            json={"value": [_recording(rid="r1", meeting_id="m1", ended=None)]},
+        )
+    )
+
+    c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
+    try:
+        refs = await c.list_meeting_recordings(_user(), limit=5)
+        assert refs[0].duration_sec == 0.0
+    finally:
+        await c.aclose()
+
+
+@respx.mock
+async def test_list_drops_recordings_without_meeting_id() -> None:
+    respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    {"id": "r1", "createdDateTime": "2026-08-22T14:00:00Z"},  # no meetingId
+                    _recording(rid="r2", meeting_id="m2"),
+                ]
+            },
+        )
+    )
+
+    c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
+    try:
+        refs = await c.list_meeting_recordings(_user(), limit=5)
+        assert [r.id for r in refs] == ["m2"]
+    finally:
+        await c.aclose()
+
+
+@respx.mock
+async def test_list_issues_exactly_one_graph_call() -> None:
+    """Regression guard: the rewrite collapsed 1+2N+N calls into ONE."""
+    route = respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "value": [
+                    _recording(rid="r1", meeting_id="m1"),
+                    _recording(rid="r2", meeting_id="m2"),
+                    _recording(rid="r3", meeting_id="m3"),
+                ]
+            },
+        )
+    )
+
+    c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
+    try:
+        await c.list_meeting_recordings(_user(), limit=5)
+        assert route.call_count == 1
     finally:
         await c.aclose()
 
@@ -179,9 +253,9 @@ async def test_get_recording_returns_endpoint_url() -> None:
 
 @respx.mock
 async def test_403_carries_status() -> None:
-    respx.get(
-        url__startswith="https://graph.microsoft.com/v1.0/me/events"
-    ).mock(return_value=httpx.Response(403, text='{"error":{"code":"Forbidden"}}'))
+    respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
+        return_value=httpx.Response(403, text='{"error":{"code":"Forbidden"}}')
+    )
 
     c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
     try:
@@ -200,7 +274,7 @@ async def test_429_with_retry_after_then_succeeds() -> None:
     original = gc._BASE_BACKOFF_SEC
     gc._BASE_BACKOFF_SEC = 0.0
     try:
-        respx.get(url__startswith="https://graph.microsoft.com/v1.0/me/events").mock(
+        respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
             side_effect=[
                 httpx.Response(429, headers={"Retry-After": "0"}, text="busy"),
                 httpx.Response(200, json={"value": []}),
