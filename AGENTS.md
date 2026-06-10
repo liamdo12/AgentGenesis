@@ -98,6 +98,14 @@ AgentGenesis/
 │   ├── 260603-1540-verify-entra-id-app-credentials/
 │   ├── 260604-1027-wire-entra-callback-and-meetings-fetch/
 │   └── …
+├── .cursor/             # Cursor-specific agent config (committed)
+│   ├── rules/
+│   │   └── plan-workflow.mdc           # auto-attached for plans/**/*.md
+│   └── commands/
+│       ├── plan.md                     # /plan slash command
+│       ├── red-team.md                 # /red-team
+│       ├── validate.md                 # /validate
+│       └── cook.md                     # /cook
 └── .claude/             # Claude Code / ck CLI config (gitignored except rules)
 ```
 
@@ -378,10 +386,90 @@ Caller MUST hold the per-run `asyncio.Lock` from `get_run_lock(run_id)`.
 | SQLAlchemy schema | `api/src/agentgenesis_api/db/models.py` |
 | MSAL config | `app/src/auth/msal-config.ts` |
 | Recent decision rationale | `docs/journals/` |
+| Slash commands (Cursor) | `.cursor/commands/*.md` (see §13) |
+| Plan-workflow rule | `.cursor/rules/plan-workflow.mdc` |
 
 ---
 
-## 13. Rules for AI agents working here
+## 13. Slash commands & planning workflow
+
+This repo ships custom slash commands under `.cursor/commands/` for
+Cursor + a shared workflow rule under `.cursor/rules/`. Equivalent
+behavior is available in Claude Code via the `ck` CLI (`npm install -g
+claudekit`) — same plan-file structure, same gates, same conventions.
+
+| Command | Purpose | When to use |
+|---|---|---|
+| `/plan <task description>` | Create a multi-phase plan under `plans/YYMMDD-HHMM-<slug>/`. Phases get individual `phase-NN-*.md` files with frontmatter (status, priority, effort, dependencies). | User asks to plan / architect / design / scope a feature. |
+| `/red-team [plan-path]` | Adversarial review of an existing plan. Five hostile roles (Security Adversary, Failure Mode Analyst, Assumption Destroyer, Scope & Complexity Critic, Verification Skeptic). Outputs findings with severity (CRITICAL → NIT) and applies them inline. | Plan touches auth, security, payments, data, public APIs, infra. |
+| `/validate [plan-path]` | Critical-questions interview. Surfaces ambiguity ("should probably…", missing acceptance criteria, hand-wavy thresholds). Asks the user 3-8 grounded multiple-choice questions. | Plan looks done but has nagging gaps. Cheaper than `/red-team`. |
+| `/cook <plan-path>` | Execute the plan phase-by-phase. Reads phase file, implements, runs tests + typecheck + ruff, walks success criteria, code-reviews diff, marks phase complete. | Plan is finalized and you want to ship. |
+
+### The workflow loop
+
+```
+/plan <ask>                       → creates plans/<dir>/
+    ↓
+/validate plans/<dir>/plan.md     → 3-8 questions; applies answers
+    ↓
+/red-team plans/<dir>/plan.md     → findings; applies inline
+    ↓
+/cook plans/<dir>/plan.md         → implements phase 1 → N
+    ↓
+ask user to commit + push
+```
+
+You can skip `/validate` or `/red-team` for small / low-risk plans.
+`/plan` accepts a `--fast` flag (in the message) to skip them
+automatically.
+
+### What lives where
+
+- **Rule definition** (the workflow the agent follows):
+  `.cursor/rules/plan-workflow.mdc`. Auto-attached when the user is
+  editing inside `plans/` or referencing `AGENTS.md`.
+- **Command bodies** (what each slash command actually does):
+  `.cursor/commands/{plan,red-team,validate,cook}.md`. Cursor's
+  slash-command picker shows these.
+- **Plan output** (work product): `plans/YYMMDD-HHMM-<slug>/` —
+  `plan.md` + `phase-NN-<slug>.md` per phase. Never write plans
+  anywhere else.
+- **Reports** (research notes, code-review handoffs): `plans/reports/`
+  with naming `{type}-YYMMDD-HHMM-{slug}-report.md`. No generic names
+  like `notes.md` or `review.md`.
+
+### Plan file contract
+
+`plan.md` MUST have these sections:
+
+- **Overview** — 1-2 paragraphs, plain English.
+- **Decisions locked** — table: decision, pick, why. Once user
+  confirms a decision here, treat it as STICKY — `/red-team` and
+  `/validate` cannot silently reverse it; they must surface
+  contradictions and ask.
+- **Phases table** — status per phase (pending / in_progress /
+  completed).
+- **Dependencies** — `blockedBy` / `blocks` if any.
+- **Out of scope** — explicit; protects against scope creep.
+- **(Optional) Red Team Review** — findings table after `/red-team`.
+- **(Optional) Validation Log** — Q&A session record after `/validate`.
+
+Each `phase-NN-<slug>.md` MUST have frontmatter + Overview +
+Requirements + Architecture + Related Code Files (Create / Modify /
+Delete) + Implementation Steps + Success Criteria (`- [ ]`
+checkboxes) + Risk Assessment.
+
+### Plan + AGENTS.md interaction
+
+This file (`AGENTS.md`) is project-wide context. Plan files are
+work-in-flight. When the agent operates inside `plans/<dir>/`, the
+plan-workflow rule auto-attaches AND `AGENTS.md` stays implicit — both
+inform the agent. If you need to pin `AGENTS.md` explicitly, type
+`@AGENTS.md` in the chat.
+
+---
+
+## 14. Rules for AI agents working here
 
 1. **Read this file + the relevant `plans/{active}/plan.md` before editing.**
 2. **Always run `uv run ruff check src tests` (api) and `npm run typecheck`
@@ -405,6 +493,13 @@ Caller MUST hold the per-run `asyncio.Lock` from `get_run_lock(run_id)`.
    `AskUserQuestion` to confirm trade-off).
 10. **Plan files in `plans/`** are work-in-flight. Don't edit completed
     plans except via `ck plan archive`.
+11. **When the user asks you to plan something**, follow the slash-command
+    flow in §13 (`/plan` → optionally `/red-team` or `/validate` →
+    `/cook`). Even if no slash command is typed, mirror the workflow:
+    scout the codebase, scope-challenge, scaffold under
+    `plans/YYMMDD-HHMM-<slug>/`, populate phases, present handoff
+    options. The CLI tool `ck plan create` is optional — fall back to
+    hand-scaffolding the same file structure if it's not installed.
 
 ---
 
