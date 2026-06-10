@@ -5,12 +5,16 @@ of the SSO plan), so every Graph request runs under the calling user's identity.
 
 `list_meeting_recordings` calls a single Graph endpoint:
 
-    GET /v1.0/me/onlineMeetings/getAllRecordings
+    GET /v1.0/communications/onlineMeetings/getAllRecordings
+        ?meetingOrganizerUserId={user.oid}&$top={limit}
 
-This returns every cloud recording the signed-in user has access to (as
-organizer) in one shot. We dedupe by `meetingId` (a meeting can have
-multiple recording chunks if paused/resumed), keep the latest per meeting,
-and build `MeetingRef` rows.
+`meetingOrganizerUserId` is REQUIRED by Graph — the action is scoped to
+recordings where the given user is the organizer. We pass the signed-in
+user's Entra Object ID (`user.oid`); delegated
+`OnlineMeetingRecording.Read.All` lets the user list their own recordings.
+
+We dedupe by `meetingId` (a meeting can have multiple recording chunks if
+paused/resumed), keep the latest per meeting, build `MeetingRef` rows.
 
 Why not the calendar walk anymore? It required `Calendars.Read` +
 `OnlineMeetings.Read` scopes the app reg doesn't grant (→ 403), and it
@@ -65,8 +69,13 @@ class GraphClient:
 
         Single Graph call. Recordings deduped by `meetingId`, latest by
         `createdDateTime` wins. Sorted newest first; capped at `limit`.
+        `meetingOrganizerUserId` is a REQUIRED query parameter on the
+        underlying Graph action — pass the signed-in user's `oid`.
         """
-        url = f"/v1.0/me/onlineMeetings/getAllRecordings?$top={limit}"
+        url = (
+            "/v1.0/communications/onlineMeetings/getAllRecordings"
+            f"?meetingOrganizerUserId={user.oid}&$top={limit}"
+        )
         data = await self._authed_get_json(user, url)
         recordings = data.get("value", [])
 

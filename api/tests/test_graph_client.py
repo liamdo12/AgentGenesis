@@ -19,7 +19,7 @@ from agentgenesis_api.msgraph import (
 from agentgenesis_api.msgraph.graph_client import GraphClient
 
 _GETALL_URL_PREFIX = (
-    "https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllRecordings"
+    "https://graph.microsoft.com/v1.0/communications/onlineMeetings/getAllRecordings"
 )
 
 
@@ -163,6 +163,26 @@ async def test_list_drops_recordings_without_meeting_id() -> None:
     try:
         refs = await c.list_meeting_recordings(_user(), limit=5)
         assert [r.id for r in refs] == ["m2"]
+    finally:
+        await c.aclose()
+
+
+@respx.mock
+async def test_list_passes_meeting_organizer_user_id() -> None:
+    """Regression: Graph requires `meetingOrganizerUserId` query param.
+
+    The user's `oid` is the Entra Object ID; Graph's getAllRecordings
+    action 400s without it.
+    """
+    route = respx.get(url__startswith=_GETALL_URL_PREFIX).mock(
+        return_value=httpx.Response(200, json={"value": []})
+    )
+
+    c = GraphClient(_settings(), _FakeBroker())  # type: ignore[arg-type]
+    try:
+        await c.list_meeting_recordings(_user(oid="alice-oid"), limit=5)
+        called_url = str(route.calls.last.request.url)
+        assert "meetingOrganizerUserId=alice-oid" in called_url
     finally:
         await c.aclose()
 
