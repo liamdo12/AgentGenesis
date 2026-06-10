@@ -1,4 +1,6 @@
-# /red-team — adversarial review of an existing plan
+# /ck-plan-red-team — adversarial review of an existing plan
+
+Also reachable as `/ck-plan red-team <path>`.
 
 Invoke when the user wants an adversarial pass on a plan file. Default
 target: the most recently modified `plan.md` under `plans/`. User can

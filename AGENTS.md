@@ -102,10 +102,10 @@ AgentGenesis/
 │   ├── rules/
 │   │   └── plan-workflow.mdc           # auto-attached for plans/**/*.md
 │   └── commands/
-│       ├── plan.md                     # /plan slash command
-│       ├── red-team.md                 # /red-team
-│       ├── validate.md                 # /validate
-│       └── cook.md                     # /cook
+│       ├── ck-plan.md                  # /ck-plan slash command
+│       ├── ck-plan-red-team.md         # /ck-plan-red-team
+│       ├── ck-plan-validate.md         # /ck-plan-validate
+│       └── ck-cook.md                  # /ck-cook
 └── .claude/             # Claude Code / ck CLI config (gitignored except rules)
 ```
 
@@ -400,27 +400,27 @@ claudekit`) — same plan-file structure, same gates, same conventions.
 
 | Command | Purpose | When to use |
 |---|---|---|
-| `/plan <task description>` | Create a multi-phase plan under `plans/YYMMDD-HHMM-<slug>/`. Phases get individual `phase-NN-*.md` files with frontmatter (status, priority, effort, dependencies). | User asks to plan / architect / design / scope a feature. |
-| `/red-team [plan-path]` | Adversarial review of an existing plan. Five hostile roles (Security Adversary, Failure Mode Analyst, Assumption Destroyer, Scope & Complexity Critic, Verification Skeptic). Outputs findings with severity (CRITICAL → NIT) and applies them inline. | Plan touches auth, security, payments, data, public APIs, infra. |
-| `/validate [plan-path]` | Critical-questions interview. Surfaces ambiguity ("should probably…", missing acceptance criteria, hand-wavy thresholds). Asks the user 3-8 grounded multiple-choice questions. | Plan looks done but has nagging gaps. Cheaper than `/red-team`. |
-| `/cook <plan-path>` | Execute the plan phase-by-phase. Reads phase file, implements, runs tests + typecheck + ruff, walks success criteria, code-reviews diff, marks phase complete. | Plan is finalized and you want to ship. |
+| `/ck-plan <task description>` | Create a multi-phase plan under `plans/YYMMDD-HHMM-<slug>/`. Phases get individual `phase-NN-*.md` files with frontmatter (status, priority, effort, dependencies). | User asks to plan / architect / design / scope a feature. |
+| `/ck-plan-red-team [plan-path]` (or `/ck-plan red-team`) | Adversarial review of an existing plan. Five hostile roles (Security Adversary, Failure Mode Analyst, Assumption Destroyer, Scope & Complexity Critic, Verification Skeptic). Outputs findings with severity (CRITICAL → NIT) and applies them inline. | Plan touches auth, security, payments, data, public APIs, infra. |
+| `/ck-plan-validate [plan-path]` (or `/ck-plan validate`) | Critical-questions interview. Surfaces ambiguity ("should probably…", missing acceptance criteria, hand-wavy thresholds). Asks the user 3-8 grounded multiple-choice questions. | Plan looks done but has nagging gaps. Cheaper than `/red-team`. |
+| `/ck-cook <plan-path>` | Execute the plan phase-by-phase. Reads phase file, implements, runs tests + typecheck + ruff, walks success criteria, code-reviews diff, marks phase complete. | Plan is finalized and you want to ship. |
 
 ### The workflow loop
 
 ```
-/plan <ask>                       → creates plans/<dir>/
+/ck-plan <ask>                       → creates plans/<dir>/
     ↓
-/validate plans/<dir>/plan.md     → 3-8 questions; applies answers
+/ck-plan-validate plans/<dir>/plan.md     → 3-8 questions; applies answers
     ↓
-/red-team plans/<dir>/plan.md     → findings; applies inline
+/ck-plan-red-team plans/<dir>/plan.md     → findings; applies inline
     ↓
-/cook plans/<dir>/plan.md         → implements phase 1 → N
+/ck-cook plans/<dir>/plan.md         → implements phase 1 → N
     ↓
 ask user to commit + push
 ```
 
-You can skip `/validate` or `/red-team` for small / low-risk plans.
-`/plan` accepts a `--fast` flag (in the message) to skip them
+You can skip `/ck-plan-validate` or `/ck-plan-red-team` for small / low-risk plans.
+`/ck-plan` accepts a `--fast` flag (in the message) to skip them
 automatically.
 
 ### What lives where
@@ -444,14 +444,14 @@ automatically.
 
 - **Overview** — 1-2 paragraphs, plain English.
 - **Decisions locked** — table: decision, pick, why. Once user
-  confirms a decision here, treat it as STICKY — `/red-team` and
-  `/validate` cannot silently reverse it; they must surface
+  confirms a decision here, treat it as STICKY — `/ck-plan-red-team` and
+  `/ck-plan-validate` cannot silently reverse it; they must surface
   contradictions and ask.
 - **Phases table** — status per phase (pending / in_progress /
   completed).
 - **Dependencies** — `blockedBy` / `blocks` if any.
 - **Out of scope** — explicit; protects against scope creep.
-- **(Optional) Red Team Review** — findings table after `/red-team`.
+- **(Optional) Red Team Review** — findings table after `/ck-plan-red-team`.
 - **(Optional) Validation Log** — Q&A session record after `/validate`.
 
 Each `phase-NN-<slug>.md` MUST have frontmatter + Overview +

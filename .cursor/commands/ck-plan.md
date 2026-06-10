@@ -1,8 +1,31 @@
-# /plan — create a multi-phase implementation plan
+# /ck-plan — create a multi-phase implementation plan (or route to a sub-action)
 
-Trigger this command when the user asks to plan, architect, design, scope,
-or roadmap a feature. Output is a directory under `plans/` with
-`plan.md` + one `phase-NN-<slug>.md` per phase.
+Mirrors Claude Code's `/ck:plan` family.
+
+## Argument routing
+
+Inspect the first word of the user's argument after `/ck-plan`:
+
+| First word | Action | Equivalent direct command |
+|---|---|---|
+| `validate` | Run validation interview. Read + follow `.cursor/commands/ck-plan-validate.md`. | `/ck-plan-validate <path>` |
+| `red-team` (or `redteam`) | Run adversarial review. Read + follow `.cursor/commands/ck-plan-red-team.md`. | `/ck-plan-red-team <path>` |
+| `archive` | Mark plan completed + `git mv` it into `plans/archive/`. | (no separate command yet) |
+| anything else (default) | Treat the whole argument as a task description and create a new plan per the steps below. | `/ck-plan <task>` |
+
+Examples:
+
+- `/ck-plan add Stripe checkout` → create plan.
+- `/ck-plan validate plans/260610-1000-stripe/plan.md` → validate that plan.
+- `/ck-plan red-team` → red-team the most recently modified plan.
+
+When routing to a sub-action, READ the corresponding command file FIRST and follow its steps end-to-end. Don't paraphrase from memory.
+
+---
+
+## Default action: create a new plan
+
+Triggered when the argument is a task description (not `validate` / `red-team` / `archive`). Output is a directory under `plans/` with `plan.md` + one `phase-NN-<slug>.md` per phase.
 
 ## Steps
 

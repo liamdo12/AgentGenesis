@@ -1,7 +1,7 @@
-# /cook — execute a plan phase-by-phase
+# /ck-cook — execute a plan phase-by-phase
 
 Invoke when the plan is written, validated, and the user wants to start
-implementing. User passes the plan path: `/cook plans/<dir>/plan.md`.
+implementing. User passes the plan path: `/ck-cook plans/<dir>/plan.md`.
 
 ## When to use
 

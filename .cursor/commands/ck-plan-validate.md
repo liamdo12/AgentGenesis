@@ -1,7 +1,9 @@
-# /validate — critical-questions interview on an existing plan
+# /ck-plan-validate — critical-questions interview on an existing plan
+
+Also reachable as `/ck-plan validate <path>`.
 
 Invoke when the user wants a final ambiguity-scrub on a plan before
-`/cook`. Default target: most recently modified `plan.md` under
+`/ck-cook`. Default target: most recently modified `plan.md` under
 `plans/`. User can pass an explicit path.
 
 ## When to use
